@@ -1,0 +1,60 @@
+# Run with:  docker compose --env-file credentials.env up --build
+# The --env-file makes the secrets in credentials.env available both for
+# variable substitution below and (via env_file:) inside the containers.
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    # Root/admin credentials must match MONGODB_ADMIN_* in config.yaml.
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: upaelo
+    # host:container. The host side (27018) only matters if you want to reach
+    # this Mongo from the host; the API talks to it internally on 27017.
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+      # Built-in KMS key enabling SSE-S3 (format: <name>:<base64-32-bytes>).
+      MINIO_KMS_SECRET_KEY: nilo-key:${MINIO_KMS_KEY}
+    ports:
+      - "9002:9000"   # S3 API      (host 9002 -> container 9000)
+      - "9003:9001"   # Web console  (host 9003 -> container 9001)
+    volumes:
+      - minio_data:/data
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - mongo
+      - minio
+    # Secrets injected into the container.
+    env_file:
+      - credentials.env
+    # Container-network overrides (win over config.yaml and credentials.env).
+    # These use the INTERNAL container ports/hostnames, independent of the
+    # host-side port mappings above.
+    environment:
+      MONGODB_HOST: mongo
+      MONGODB_PORT: 27017
+      MINIO_ENDPOINT: minio:9000
+    # Persist locally-stored media (user photos) across restarts.
+    volumes:
+      - media_data:/app/media
+    ports:
+      - "8001:8000"
+
+volumes:
+  mongo_data:
+  minio_data:
+  media_data:

@@ -1,0 +1,72 @@
+# NILO backend - non-sensitive configuration.
+# Secrets (connection URIs, keys, passwords) live in credentials.env.
+# Any value here can be overridden by an environment variable of the same name.
+
+# --- General ---
+PROJECT_NAME: NILO
+ENVIRONMENT: development
+DEBUG: true
+API_V1_PREFIX: /api/v1
+
+# --- MongoDB (non-sensitive) ---
+# Passwords live in credentials.env (MONGODB_ADMIN_PASSWORD, MONGODB_APP_PASSWORD).
+# NOTE: host/port here are how the API *connects*. Under docker compose they are
+# overridden (MONGODB_HOST=mongo, MONGODB_PORT=27017 -> the container's internal
+# port), so changing them here does NOT affect the docker deployment. To change
+# the port Docker publishes on the host, edit the mongo `ports:` in
+# docker-compose.yml.
+MONGODB_HOST: localhost
+MONGODB_PORT: 27018
+MONGODB_DB: nilo
+# Admin user used ONLY at startup to provision the app user/database.
+MONGODB_ADMIN_USER: admin
+MONGODB_ADMIN_AUTH_SOURCE: admin
+# Application user (auto-created/updated at startup); used for all operations.
+MONGODB_APP_USER: nilo
+# Connect as admin at startup to ensure the app user + db exist.
+MONGODB_PROVISION: true
+
+# --- MinIO / S3 object storage (non-sensitive) ---
+# Access/secret keys are set in credentials.env.
+MINIO_ENDPOINT: localhost:9000
+MINIO_SECURE: false
+MINIO_BUCKET: nilo-data
+MINIO_PRESIGN_EXPIRY: 3600
+# Server-side encryption at rest (SSE-S3) as bucket default.
+# Requires a KMS configured on the MinIO server (see docker-compose.yml).
+MINIO_SSE: true
+
+# --- Security / JWT (non-sensitive) ---
+# JWT_SECRET_KEY is set in credentials.env.
+JWT_ALGORITHM: HS256
+# Access token is short-lived; the client renews it with the refresh token.
+ACCESS_TOKEN_EXPIRE_MINUTES: 60
+# Refresh token lifetime. While it is used within this window, the session can
+# be kept alive indefinitely (rotation issues a fresh refresh token each time).
+REFRESH_TOKEN_EXPIRE_MINUTES: 43200  # 30 days
+
+# --- Bootstrap root user (non-sensitive part) ---
+# ROOT_EMAIL / ROOT_PASSWORD are set in credentials.env.
+ROOT_FULL_NAME: NILO Root
+
+# --- Seed demo users (non-sensitive part) ---
+# When true, a demo clinician and patient are created on startup so you can log
+# in right after `docker compose up`. Their emails/passwords live in
+# credentials.env (SEED_CLINICIAN_*, SEED_PATIENT_*). Set to false in production.
+SEED_USERS: true
+
+# --- Local media storage (avatars kept on the backend FS, not in MinIO) ---
+# Directory (inside the container) where uploaded user photos are stored, and
+# the URL prefix they are served under.
+MEDIA_ROOT: media
+MEDIA_URL_PREFIX: /media
+MAX_PHOTO_BYTES: 5242880  # 5 MB
+
+# --- Video / recording defaults ---
+# Hybrid strategy: short HLS segments for live view + consolidated archive chunks.
+DEFAULT_VIDEO_CHUNK_SECONDS: 300
+DEFAULT_HLS_SEGMENT_SECONDS: 6
+
+# --- CORS ---
+CORS_ORIGINS:
+  - "*"

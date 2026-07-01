@@ -148,8 +148,10 @@ activemq-data/
 *.sage.py
 
 # Environments
-.env
+#.env
 .envrc
+# NILO secrets: keep the .example, never commit the real one.
+credentials.env
 .venv
 env/
 venv/
