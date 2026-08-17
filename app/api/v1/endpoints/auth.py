@@ -1,7 +1,9 @@
 """Authentication endpoints."""
 
+import logging
+
 from beanie import PydanticObjectId
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.api.deps import get_current_user
@@ -18,6 +20,17 @@ from app.schemas.auth import RefreshRequest, Token
 from app.schemas.user import UserOut
 
 router = APIRouter()
+logger = logging.getLogger("nilo.auth")
+
+
+@router.get("/cors-probe")
+async def cors_probe(request: Request) -> dict[str, str | bool]:
+    """Cross-origin smoke test callable from the frontend (port 8080 → 8001)."""
+    return {
+        "ok": True,
+        "origin": request.headers.get("origin") or "",
+        "message": "CORS OK: this response was read by the browser from another origin.",
+    }
 
 
 def _issue_tokens(user: User) -> Token:
@@ -30,8 +43,15 @@ def _issue_tokens(user: User) -> Token:
 
 
 @router.post("/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()) -> Token:
+async def login(
+    request: Request, form_data: OAuth2PasswordRequestForm = Depends()
+) -> Token:
     """OAuth2 password login. Username field must contain the email."""
+    logger.info(
+        "login attempt origin=%s username=%s",
+        request.headers.get("origin"),
+        form_data.username,
+    )
     user = await User.find_one(
         User.email_bidx == crypto.blind_index(form_data.username)
     )

@@ -70,16 +70,19 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_origin_regex=settings.CORS_ORIGIN_REGEX or None,
-    allow_credentials=True,
+    # JWT en Authorization; no cookies de sesión → más simple y compatible con tablets.
+    allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    # Safari/iOS does not always accept Allow-Headers: * on preflight.
     allow_headers=[
         "Accept",
+        "Accept-Language",
         "Authorization",
+        "Content-Language",
         "Content-Type",
         "Origin",
         "X-Requested-With",
     ],
+    max_age=600,
 )
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
