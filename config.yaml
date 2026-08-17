@@ -67,5 +67,10 @@ DEFAULT_VIDEO_CHUNK_SECONDS: 300
 DEFAULT_HLS_SEGMENT_SECONDS: 6
 
 # --- CORS ---
+# Browser origins allowed to call this API (scheme + host + port must match exactly).
+# Override at runtime with CORS_ORIGINS env (comma-separated), e.g.:
+#   CORS_ORIGINS=http://192.168.1.43:8080,http://equipo1.local:8080,http://localhost:8080
 CORS_ORIGINS:
-  - "*"
+  - "http://192.168.1.43:8080"
+  - "http://localhost:8080"
+  - "http://127.0.0.1:8080"

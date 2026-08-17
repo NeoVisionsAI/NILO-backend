@@ -18,7 +18,7 @@ import os
 from functools import lru_cache
 from urllib.parse import quote_plus
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -112,8 +112,29 @@ class Settings(BaseSettings):
     # Duration (seconds) of the short live HLS segments.
     DEFAULT_HLS_SEGMENT_SECONDS: int = 6
 
-    # --- CORS (config.yaml) ---
-    CORS_ORIGINS: list[str] = Field(default_factory=lambda: ["*"])
+    # --- CORS (config.yaml; override with CORS_ORIGINS env, comma-separated) ---
+    CORS_ORIGINS: list[str] = Field(
+        default_factory=lambda: [
+            "http://192.168.1.43:8080",
+            "http://localhost:8080",
+            "http://127.0.0.1:8080",
+        ]
+    )
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, value: object) -> list[str]:
+        """Accept YAML list or env var as comma-separated origins."""
+        if value is None:
+            return []
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped == "*":
+                return ["*"]
+            return [origin.strip() for origin in stripped.split(",") if origin.strip()]
+        if isinstance(value, (list, tuple)):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return value  # type: ignore[return-value]
 
     @property
     def mongodb_admin_uri(self) -> str:
