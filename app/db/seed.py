@@ -1,10 +1,4 @@
-"""Optional demo users created at startup.
-
-When ``SEED_USERS`` is enabled we create a demo clinician and a demo patient so
-the platform is immediately usable (e.g. logging in from Postman) right after
-``docker compose up``. The operation is idempotent: users already present
-(looked up by their email blind index) are left untouched.
-"""
+"""Optional demo data created at startup."""
 
 import logging
 
@@ -15,6 +9,7 @@ from app.core.config import settings
 from app.core.security import hash_password
 from app.models.enums import ClinicianType, PatientType, UserRole
 from app.models.user import ClinicianProfile, PatientProfile, User
+from app.services.clinical_patient import sync_clinical_patient
 
 logger = logging.getLogger("nilo")
 
@@ -30,7 +25,6 @@ async def _ensure_user(
     clinician_profile: ClinicianProfile | None = None,
     patient_profile: PatientProfile | None = None,
 ) -> User | None:
-    """Create a user if one with the same email does not exist yet."""
     if not email or not password:
         return None
 
@@ -55,7 +49,6 @@ async def _ensure_user(
 
 
 async def seed_demo_users() -> None:
-    """Create demo clinician/patient accounts when SEED_USERS is enabled."""
     if not settings.SEED_USERS:
         return
 
@@ -78,7 +71,7 @@ async def seed_demo_users() -> None:
         ),
     )
 
-    await _ensure_user(
+    patient = await _ensure_user(
         email=settings.SEED_PATIENT_EMAIL,
         password=settings.SEED_PATIENT_PASSWORD,
         name="Pablo",
@@ -87,6 +80,10 @@ async def seed_demo_users() -> None:
         registered_by=clinician.id if clinician is not None else root_id,
         patient_profile=PatientProfile(
             type_patient=PatientType.ADULT,
+            monitoring_active=True,
+            medical_record_number="MRN-DEMO-001",
             relative_contact="+34600000000",
         ),
     )
+    if patient is not None:
+        await sync_clinical_patient(patient)

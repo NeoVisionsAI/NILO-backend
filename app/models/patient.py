@@ -18,6 +18,10 @@ from app.models.fields import (
 
 
 class Patient(Document, TimestampMixin):
+    # Linked patient user account (``type_user == patient``). Auto-synced from
+    # the user; do not create clinical patients directly from the frontend.
+    user_id: PydanticObjectId | None = None
+
     full_name: EncryptedStr
     # Human-friendly identifier (e.g. hospital medical record number).
     medical_record_number: EncryptedStr | None = None
@@ -28,13 +32,29 @@ class Patient(Document, TimestampMixin):
     sex: Sex = Sex.UNKNOWN
     patient_type: PatientType = PatientType.ADULT
 
+    # Photo as a base64 data URI (e.g. "data:image/jpeg;base64,..."), stored
+    # encrypted at rest (no physical files).
+    photo: EncryptedStr | None = None
+
     # Physical location for the monitoring hardware.
     room: str | None = None
     bed: str | None = None
 
+    # Whether data is currently being collected for this patient.
+    monitoring_active: bool = False
+
+    # Physical NILO node assigned to this patient.
+    node_id: PydanticObjectId | None = None
+
+    # Relative / guardian contact (a relative may get portal access in future).
+    relative_name: EncryptedStr | None = None
+    relative_contact: EncryptedStr | None = None
+    relative_address: EncryptedStr | None = None
+
     is_active: bool = True
     notes: EncryptedStr | None = None
 
+    # The clinician (or root) that registered this patient.
     created_by: PydanticObjectId | None = None
 
     class Settings:
@@ -49,5 +69,12 @@ class Patient(Document, TimestampMixin):
                 [("mrn_bidx", ASCENDING)],
                 unique=True,
                 partialFilterExpression={"mrn_bidx": {"$type": "string"}},
+            ),
+            IndexModel([("created_by", ASCENDING)]),
+            IndexModel([("node_id", ASCENDING)]),
+            IndexModel(
+                [("user_id", ASCENDING)],
+                unique=True,
+                partialFilterExpression={"user_id": {"$type": "objectId"}},
             ),
         ]

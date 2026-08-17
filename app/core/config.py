@@ -99,13 +99,11 @@ class Settings(BaseSettings):
     SEED_PATIENT_EMAIL: str = "patient@niloapp.com"  # credentials.env
     SEED_PATIENT_PASSWORD: str = "changeme"  # credentials.env
 
-    # --- Local media storage (config.yaml) ---
-    # Small files kept on the backend filesystem (e.g. user avatars), NOT in
-    # MinIO. Served as static files under MEDIA_URL_PREFIX.
-    MEDIA_ROOT: str = "media"
-    MEDIA_URL_PREFIX: str = "/media"
-    # Max accepted size for an uploaded user photo, in bytes.
-    MAX_PHOTO_BYTES: int = 5 * 1024 * 1024
+    # --- User photos (config.yaml) ---
+    # Photos are stored as base64 in the DB (encrypted), not as physical files.
+    # Max accepted decoded image size, in bytes (kept small since it lives in
+    # the user document and is base64-encoded + encrypted).
+    MAX_PHOTO_BYTES: int = 2 * 1024 * 1024
 
     # --- Video / recording defaults (config.yaml) ---
     # Default duration (seconds) of an archival video chunk. Hybrid strategy:

@@ -6,6 +6,7 @@
 from app.models.audio import AudioRecording
 from app.models.landmarks import BodyLandmarks
 from app.models.medical_document import MedicalDocument
+from app.models.node import Node
 from app.models.pain_event import PainEvent
 from app.models.patient import Patient
 from app.models.physiological import PhysiologicalReading
@@ -15,6 +16,7 @@ from app.models.user import User
 ALL_DOCUMENT_MODELS = [
     User,
     Patient,
+    Node,
     Recording,
     VideoSegment,
     PhysiologicalReading,
@@ -28,6 +30,7 @@ __all__ = [
     "AudioRecording",
     "BodyLandmarks",
     "MedicalDocument",
+    "Node",
     "PainEvent",
     "Patient",
     "PhysiologicalReading",

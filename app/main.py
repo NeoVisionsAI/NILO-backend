@@ -2,11 +2,9 @@
 
 import logging
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import api_router
 from app.core import crypto
@@ -72,15 +70,6 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
-
-# Serve locally-stored media (e.g. user photos) from the backend filesystem.
-_media_root = Path(settings.MEDIA_ROOT)
-_media_root.mkdir(parents=True, exist_ok=True)
-app.mount(
-    settings.MEDIA_URL_PREFIX,
-    StaticFiles(directory=str(_media_root)),
-    name="media",
-)
 
 
 @app.get("/health", tags=["health"])

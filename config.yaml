@@ -55,12 +55,11 @@ ROOT_FULL_NAME: NILO Root
 # credentials.env (SEED_CLINICIAN_*, SEED_PATIENT_*). Set to false in production.
 SEED_USERS: true
 
-# --- Local media storage (avatars kept on the backend FS, not in MinIO) ---
-# Directory (inside the container) where uploaded user photos are stored, and
-# the URL prefix they are served under.
-MEDIA_ROOT: media
-MEDIA_URL_PREFIX: /media
-MAX_PHOTO_BYTES: 5242880  # 5 MB
+# --- User photos ---
+# Photos are stored as base64 in the DB (encrypted at rest), not as files.
+# Max accepted decoded image size in bytes (keep it small: it lives inside the
+# user document, base64-encoded and encrypted).
+MAX_PHOTO_BYTES: 2097152  # 2 MB
 
 # --- Video / recording defaults ---
 # Hybrid strategy: short HLS segments for live view + consolidated archive chunks.

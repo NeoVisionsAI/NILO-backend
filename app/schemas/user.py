@@ -5,10 +5,9 @@ from datetime import date, datetime
 from beanie import PydanticObjectId
 from pydantic import BaseModel, ConfigDict, EmailStr, model_validator
 
-from app.models.enums import ClinicianType, PatientType, UserRole
+from app.models.enums import ClinicianType, PatientType, Sex, UserRole
 
 
-# --- Embedded profiles ---
 class ClinicianProfileIn(BaseModel):
     type_clinician: ClinicianType = ClinicianType.OTHER
     institution: str | None = None
@@ -19,11 +18,17 @@ class ClinicianProfileIn(BaseModel):
 class PatientProfileIn(BaseModel):
     type_patient: PatientType = PatientType.ADULT
     monitoring_active: bool = False
+    node_id: PydanticObjectId | None = None
+    medical_record_number: str | None = None
+    sex: Sex = Sex.UNKNOWN
+    room: str | None = None
+    bed: str | None = None
+    notes: str | None = None
+    relative_name: str | None = None
     relative_address: str | None = None
     relative_contact: str | None = None
 
 
-# --- Registration ---
 class UserCreate(BaseModel):
     name: str
     lastname: str
@@ -32,6 +37,7 @@ class UserCreate(BaseModel):
     password: str
 
     birthdate: date | None = None
+    photo: str | None = None
     address: str | None = None
     zip: str | None = None
     country: str | None = None
@@ -56,13 +62,13 @@ class UserCreate(BaseModel):
         return self
 
 
-# --- Update (partial) ---
 class UserUpdate(BaseModel):
     name: str | None = None
     lastname: str | None = None
     email: EmailStr | None = None
     password: str | None = None
     birthdate: date | None = None
+    photo: str | None = None
     address: str | None = None
     zip: str | None = None
     country: str | None = None
@@ -72,7 +78,6 @@ class UserUpdate(BaseModel):
     patient_profile: PatientProfileIn | None = None
 
 
-# --- Output ---
 class ClinicianProfileOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -87,6 +92,13 @@ class PatientProfileOut(BaseModel):
 
     type_patient: PatientType
     monitoring_active: bool
+    node_id: PydanticObjectId | None = None
+    medical_record_number: str | None = None
+    sex: Sex
+    room: str | None = None
+    bed: str | None = None
+    notes: str | None = None
+    relative_name: str | None = None
     relative_address: str | None = None
     relative_contact: str | None = None
 
@@ -98,11 +110,9 @@ class UserOut(BaseModel):
     name: str
     lastname: str
     type_user: UserRole
-    # Plain str on output (already validated as EmailStr on input); avoids
-    # response-validation failures for reserved domains like ``.local``.
     email: str
     birthdate: date | None = None
-    photo_url: str | None = None
+    photo: str | None = None
     address: str | None = None
     zip: str | None = None
     country: str | None = None
@@ -112,3 +122,18 @@ class UserOut(BaseModel):
     registered_by: PydanticObjectId | None = None
     clinician_profile: ClinicianProfileOut | None = None
     patient_profile: PatientProfileOut | None = None
+
+
+class AssignNodeRequest(BaseModel):
+    node_id: PydanticObjectId | None = None
+
+
+class MonitoringActivePatientOut(BaseModel):
+    """Lightweight patient summary for monitoring dashboards."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: PydanticObjectId
+    name: str
+    lastname: str
+    photo: str | None = None

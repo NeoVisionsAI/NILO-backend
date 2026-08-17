@@ -6,10 +6,10 @@ services:
   mongo:
     image: mongo:7
     restart: unless-stopped
-    # Root/admin credentials must match MONGODB_ADMIN_* in config.yaml.
+    # Root/admin credentials must match MONGODB_ADMIN_* in credentials.env.
     environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: upaelo
+      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_ADMIN_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ADMIN_PASSWORD:-upaelo}
     # host:container. The host side (27018) only matters if you want to reach
     # this Mongo from the host; the API talks to it internally on 27017.
     ports:
@@ -48,13 +48,9 @@ services:
       MONGODB_HOST: mongo
       MONGODB_PORT: 27017
       MINIO_ENDPOINT: minio:9000
-    # Persist locally-stored media (user photos) across restarts.
-    volumes:
-      - media_data:/app/media
     ports:
       - "8001:8000"
 
 volumes:
   mongo_data:
   minio_data:
-  media_data:

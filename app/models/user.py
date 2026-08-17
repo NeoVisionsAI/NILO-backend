@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from pymongo import ASCENDING, IndexModel
 
 from app.models.base import TimestampMixin, utcnow
-from app.models.enums import ClinicianType, PatientType, UserRole
+from app.models.enums import ClinicianType, PatientType, Sex, UserRole
 from app.models.fields import (
     ENCRYPTED_BSON_ENCODERS,
     EncryptedDate,
@@ -34,12 +34,23 @@ class ClinicianProfile(BaseModel):
 
 
 class PatientProfile(BaseModel):
-    """Extra fields for patient users."""
+    """Extra fields for patient users (monitored subjects).
+
+    The clinician registers these via ``POST /users``. The account may log in
+    in the future (e.g. a relative). Monitoring data references the linked
+    clinical ``Patient`` record (auto-synced from this profile).
+    """
 
     type_patient: PatientType = PatientType.ADULT
-    # Whether data is currently being collected for this patient. Distinct from
-    # the account-level ``is_active`` flag (which controls login/access).
     monitoring_active: bool = False
+    # Physical NILO node assigned to this patient for data collection.
+    node_id: PydanticObjectId | None = None
+    medical_record_number: EncryptedStr | None = None
+    sex: Sex = Sex.UNKNOWN
+    room: str | None = None
+    bed: str | None = None
+    notes: EncryptedStr | None = None
+    relative_name: EncryptedStr | None = None
     relative_address: EncryptedStr | None = None
     relative_contact: EncryptedStr | None = None
 
@@ -52,9 +63,9 @@ class User(Document, TimestampMixin):
 
     # Date of birth (PII, encrypted at rest).
     birthdate: EncryptedDate | None = None
-    # URL/path to the user's photo, served by this backend (see MEDIA_URL_PREFIX).
-    # The binary lives on the backend filesystem, not in MinIO.
-    photo_url: str | None = None
+    # User photo stored as a base64 data URI (e.g. "data:image/jpeg;base64,...").
+    # Kept in the DB (no physical files) and encrypted at rest for privacy.
+    photo: EncryptedStr | None = None
 
     address: EncryptedStr | None = None
     zip: EncryptedStr | None = None
@@ -69,8 +80,7 @@ class User(Document, TimestampMixin):
     register_date: datetime = Field(default_factory=utcnow)
     is_active: bool = True
 
-    # Which user (clinician/root) registered this account. Used for the
-    # "a clinician only sees the patients they registered" rule.
+    # Which user registered this account (clinician or root).
     registered_by: PydanticObjectId | None = None
 
     # --- Role-specific profiles ---
@@ -80,9 +90,6 @@ class User(Document, TimestampMixin):
     class Settings:
         name = "users"
         bson_encoders = ENCRYPTED_BSON_ENCODERS
-        # Re-validate on save so values set via attribute assignment (e.g. on
-        # PATCH) are re-wrapped into the encrypted marker types and therefore
-        # actually encrypted at rest (plain assignment would bypass encryption).
         validate_on_save = True
         indexes = [
             IndexModel([("email_bidx", ASCENDING)], unique=True),
