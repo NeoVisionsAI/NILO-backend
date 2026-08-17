@@ -13,6 +13,7 @@
 #   ./deploy.sh --down -v        # además borrar volúmenes (reset Mongo/MinIO)
 #   ./deploy.sh --logs           # seguir logs de la API
 #   ./deploy.sh --status         # estado de contenedores
+#   ./deploy.sh --fix-docker-config  # quitar credsStore/credHelpers rotos
 #
 set -euo pipefail
 
@@ -54,18 +55,87 @@ docker_compose() {
   docker compose --env-file "$CREDENTIALS_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
-# Evita el error "credsStore": "desktop" en hosts Linux sin Docker Desktop.
-setup_docker_config() {
-  local broken_config="${HOME}/.docker/config.json"
-  if [[ -f "$broken_config" ]] && grep -q '"credsStore"' "$broken_config" 2>/dev/null; then
-    local nocreds="${TMPDIR:-/tmp}/docker-nilo-nocreds"
-    mkdir -p "$nocreds"
-    if [[ ! -f "$nocreds/config.json" ]]; then
-      echo '{}' >"$nocreds/config.json"
-    fi
-    export DOCKER_CONFIG="$nocreds"
-    warn "Docker config con credsStore detectado; usando DOCKER_CONFIG=$nocreds"
+# Linux hosts copied from Docker Desktop often ship credsStore/credHelpers that
+# break public image pulls with GPG errors. Use an isolated empty config unless
+# the user opts out (NILO_KEEP_DOCKER_CONFIG=1).
+use_clean_docker_config() {
+  if [[ "${NILO_KEEP_DOCKER_CONFIG:-0}" == "1" ]]; then
+    return 0
   fi
+  local nocreds="${TMPDIR:-/tmp}/docker-nilo-nocreds"
+  mkdir -p "$nocreds"
+  printf '%s\n' '{}' >"$nocreds/config.json"
+  export DOCKER_CONFIG="$nocreds"
+}
+
+docker_config_is_broken() {
+  local cfg="$1"
+  [[ -f "$cfg" ]] || return 1
+  grep -qE '"credsStore"|"credHelpers"' "$cfg" 2>/dev/null
+}
+
+setup_docker_config() {
+  local user_config="${HOME}/.docker/config.json"
+  if docker_config_is_broken "$user_config"; then
+    use_clean_docker_config
+    warn "Docker config con credsStore/credHelpers detectado en ${user_config}."
+    warn "Usando DOCKER_CONFIG=${DOCKER_CONFIG} (imágenes públicas, sin login)."
+    warn "Arreglo permanente: ./deploy.sh --fix-docker-config"
+    return 0
+  fi
+  # Sin config rota, igualmente evita helpers si DOCKER_CONFIG no está fijado.
+  if [[ -z "${DOCKER_CONFIG:-}" ]]; then
+    use_clean_docker_config
+  fi
+}
+
+fix_docker_config_permanent() {
+  local cfg="${HOME}/.docker/config.json"
+  if [[ ! -f "$cfg" ]]; then
+    info "No existe ${cfg}; nada que arreglar."
+    return 0
+  fi
+  if ! docker_config_is_broken "$cfg"; then
+    info "Config OK (sin credsStore/credHelpers)."
+    return 0
+  fi
+  require_command python3
+  local backup="${cfg}.bak.$(date +%Y%m%d%H%M%S)"
+  cp "$cfg" "$backup"
+  python3 - "$cfg" <<'PY'
+import json, sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as f:
+    cfg = json.load(f)
+cfg.pop("credsStore", None)
+cfg.pop("credHelpers", None)
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(cfg, f, indent=2)
+    f.write("\n")
+PY
+  info "Eliminados credsStore/credHelpers de ${cfg}"
+  info "Backup: ${backup}"
+  info "Vuelve a ejecutar: ./deploy.sh"
+}
+
+compose_up_with_retry() {
+  local log
+  log="$(mktemp)"
+  if docker_compose up --build -d >"$log" 2>&1; then
+    cat "$log"
+    rm -f "$log"
+    return 0
+  fi
+  cat "$log" >&2
+  if grep -qiE 'gpg|credentials|credsStore|credHelpers|error getting credentials' "$log"; then
+    warn "Fallo por credential helpers de Docker; reintentando con config limpia..."
+    use_clean_docker_config
+    rm -f "$log"
+    docker_compose up --build -d
+    return $?
+  fi
+  rm -f "$log"
+  return 1
 }
 
 install_docker_debian() {
@@ -215,7 +285,7 @@ cmd_deploy() {
   check_ports "$MINIO_CONSOLE_PORT" "MinIO consola"
 
   info "Construyendo y levantando servicios (mongo, minio, api)..."
-  docker_compose up --build -d
+  compose_up_with_retry
 
   wait_for_health
   print_summary
@@ -270,6 +340,9 @@ main() {
       ;;
     --status)
       cmd_status
+      ;;
+    --fix-docker-config)
+      fix_docker_config_permanent
       ;;
     "")
       cmd_deploy
