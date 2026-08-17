@@ -131,12 +131,18 @@ class Settings(BaseSettings):
             return []
         if isinstance(value, str):
             stripped = value.strip()
+            if not stripped:
+                return []
             if stripped == "*":
                 return ["*"]
             return [origin.strip() for origin in stripped.split(",") if origin.strip()]
         if isinstance(value, (list, tuple)):
             return [str(item).strip() for item in value if str(item).strip()]
         return value  # type: ignore[return-value]
+
+    # Optional regex for dev/LAN (tablets often use hostname instead of IP).
+    # Set to empty string in production. Env: CORS_ORIGIN_REGEX=...
+    CORS_ORIGIN_REGEX: str | None = None
 
     @property
     def mongodb_admin_uri(self) -> str:

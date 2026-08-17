@@ -74,3 +74,7 @@ CORS_ORIGINS:
   - "http://192.168.1.43:8080"
   - "http://localhost:8080"
   - "http://127.0.0.1:8080"
+# In development, also allow http://<hostname>:<port> and private LAN IPs (tablets
+# often open the UI by machine name, not the same IP as the desktop browser).
+# Disable in production (set to null or empty).
+CORS_ORIGIN_REGEX: "^http://(localhost|127\\.0\\.0\\.1|192\\.168\\.\\d{1,3}\\.\\d{1,3}|10\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}|172\\.(1[6-9]|2\\d|3[0-1])\\.\\d{1,3}\\.\\d{1,3}|[\\w-]+(?:\\.[\\w-]+)*):\\d+$"

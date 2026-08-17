@@ -43,6 +43,11 @@ async def _bootstrap_root_user() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info(
+        "CORS allow_origins=%s allow_origin_regex=%s",
+        settings.CORS_ORIGINS,
+        settings.CORS_ORIGIN_REGEX or "(disabled)",
+    )
     await connect_to_mongo()
     try:
         ensure_bucket()
@@ -64,9 +69,17 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
+    allow_origin_regex=settings.CORS_ORIGIN_REGEX or None,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    # Safari/iOS does not always accept Allow-Headers: * on preflight.
+    allow_headers=[
+        "Accept",
+        "Authorization",
+        "Content-Type",
+        "Origin",
+        "X-Requested-With",
+    ],
 )
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
