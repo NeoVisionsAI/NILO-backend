@@ -50,22 +50,18 @@ require_command() {
   fi
 }
 
-docker_compose() {
-  # shellcheck disable=SC2086
-  docker compose --env-file "$CREDENTIALS_FILE" -f "$COMPOSE_FILE" "$@"
+NILO_DOCKER_CFG=""
+
+docker_cmd() {
+  if [[ -n "$NILO_DOCKER_CFG" ]]; then
+    docker --config "$NILO_DOCKER_CFG" "$@"
+  else
+    docker "$@"
+  fi
 }
 
-# Linux hosts copied from Docker Desktop often ship credsStore/credHelpers that
-# break public image pulls with GPG errors. Use an isolated empty config unless
-# the user opts out (NILO_KEEP_DOCKER_CONFIG=1).
-use_clean_docker_config() {
-  if [[ "${NILO_KEEP_DOCKER_CONFIG:-0}" == "1" ]]; then
-    return 0
-  fi
-  local nocreds="${TMPDIR:-/tmp}/docker-nilo-nocreds"
-  mkdir -p "$nocreds"
-  printf '%s\n' '{}' >"$nocreds/config.json"
-  export DOCKER_CONFIG="$nocreds"
+docker_compose() {
+  docker_cmd compose --env-file "$CREDENTIALS_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
 docker_config_is_broken() {
@@ -74,66 +70,129 @@ docker_config_is_broken() {
   grep -qE '"credsStore"|"credHelpers"' "$cfg" 2>/dev/null
 }
 
-setup_docker_config() {
-  local user_config="${HOME}/.docker/config.json"
-  if docker_config_is_broken "$user_config"; then
-    use_clean_docker_config
-    warn "Docker config con credsStore/credHelpers detectado en ${user_config}."
-    warn "Usando DOCKER_CONFIG=${DOCKER_CONFIG} (imágenes públicas, sin login)."
-    warn "Arreglo permanente: ./deploy.sh --fix-docker-config"
-    return 0
-  fi
-  # Sin config rota, igualmente evita helpers si DOCKER_CONFIG no está fijado.
-  if [[ -z "${DOCKER_CONFIG:-}" ]]; then
-    use_clean_docker_config
-  fi
-}
-
-fix_docker_config_permanent() {
-  local cfg="${HOME}/.docker/config.json"
-  if [[ ! -f "$cfg" ]]; then
-    info "No existe ${cfg}; nada que arreglar."
-    return 0
-  fi
-  if ! docker_config_is_broken "$cfg"; then
-    info "Config OK (sin credsStore/credHelpers)."
-    return 0
-  fi
+strip_docker_credential_helpers() {
+  local cfg="$1"
   require_command python3
-  local backup="${cfg}.bak.$(date +%Y%m%d%H%M%S)"
-  cp "$cfg" "$backup"
   python3 - "$cfg" <<'PY'
 import json, sys
 path = sys.argv[1]
 with open(path, encoding="utf-8") as f:
-    cfg = json.load(f)
-cfg.pop("credsStore", None)
-cfg.pop("credHelpers", None)
+    data = json.load(f)
+data.pop("credsStore", None)
+data.pop("credHelpers", None)
 with open(path, "w", encoding="utf-8") as f:
-    json.dump(cfg, f, indent=2)
+    json.dump(data, f, indent=2)
     f.write("\n")
 PY
-  info "Eliminados credsStore/credHelpers de ${cfg}"
-  info "Backup: ${backup}"
-  info "Vuelve a ejecutar: ./deploy.sh"
+}
+
+fix_docker_config_file() {
+  local cfg="$1"
+  if [[ ! -f "$cfg" ]]; then
+    return 0
+  fi
+  if ! docker_config_is_broken "$cfg"; then
+    return 0
+  fi
+  local backup="${cfg}.bak.$(date +%Y%m%d%H%M%S)"
+  cp "$cfg" "$backup"
+  strip_docker_credential_helpers "$cfg"
+  info "Corregido ${cfg} (backup: ${backup})"
+}
+
+use_clean_docker_config() {
+  if [[ "${NILO_KEEP_DOCKER_CONFIG:-0}" == "1" ]]; then
+    NILO_DOCKER_CFG="${DOCKER_CONFIG:-$HOME/.docker}"
+    return 0
+  fi
+  NILO_DOCKER_CFG="${TMPDIR:-/tmp}/docker-nilo-nocreds"
+  mkdir -p "$NILO_DOCKER_CFG"
+  printf '%s\n' '{}' >"$NILO_DOCKER_CFG/config.json"
+  export DOCKER_CONFIG="$NILO_DOCKER_CFG"
+}
+
+setup_docker_config() {
+  use_clean_docker_config
+
+  # BuildKit lee ~/.docker/config.json del host; corregirlo es lo que de verdad arregla el GPG error.
+  if [[ "${NILO_KEEP_DOCKER_CONFIG:-0}" != "1" ]]; then
+    local user_config="${HOME}/.docker/config.json"
+    if docker_config_is_broken "$user_config"; then
+      warn "Docker config incompatible (credsStore/credHelpers) en ${user_config}"
+      fix_docker_config_file "$user_config"
+    fi
+    if [[ -f /root/.docker/config.json ]] && docker_config_is_broken /root/.docker/config.json; then
+      warn "También hay config rota en /root/.docker/config.json (sudo docker)."
+      warn "Ejecuta: sudo ./deploy.sh --fix-docker-config"
+    fi
+  fi
+}
+
+fix_docker_config_permanent() {
+  local user_config="${HOME}/.docker/config.json"
+  if [[ -f "$user_config" ]] && ! docker_config_is_broken "$user_config"; then
+    info "Config de usuario OK (sin credsStore/credHelpers)."
+  else
+    fix_docker_config_file "$user_config"
+  fi
+  if [[ "$(id -u)" -eq 0 ]] && [[ -f /root/.docker/config.json ]]; then
+    fix_docker_config_file /root/.docker/config.json
+  elif [[ -f /root/.docker/config.json ]] && docker_config_is_broken /root/.docker/config.json; then
+    warn "Hay config rota en /root/.docker/config.json. Ejecuta:"
+    warn "  sudo python3 -c \"import json; p='/root/.docker/config.json'; c=json.load(open(p)); c.pop('credsStore',None); c.pop('credHelpers',None); json.dump(c,open(p,'w'),indent=2)\""
+  fi
+  info "Listo. Vuelve a ejecutar: ./deploy.sh"
+}
+
+prepull_images() {
+  info "Descargando imágenes base..."
+  docker_cmd pull python:3.13-slim
+  docker_cmd pull mongo:7
+  docker_cmd pull minio/minio:latest
+}
+
+is_credential_pull_error() {
+  local log="$1"
+  grep -qiE 'gpg|credentials|credsStore|credHelpers|error getting credentials|descifrado fallido' "$log"
 }
 
 compose_up_with_retry() {
   local log
   log="$(mktemp)"
+
+  prepull_images || true
+
   if docker_compose up --build -d >"$log" 2>&1; then
     cat "$log"
     rm -f "$log"
     return 0
   fi
   cat "$log" >&2
-  if grep -qiE 'gpg|credentials|credsStore|credHelpers|error getting credentials' "$log"; then
-    warn "Fallo por credential helpers de Docker; reintentando con config limpia..."
-    use_clean_docker_config
+
+  if ! is_credential_pull_error "$log"; then
     rm -f "$log"
-    docker_compose up --build -d
+    return 1
+  fi
+
+  warn "Fallo por credential helpers; corrigiendo config y reintentando..."
+  fix_docker_config_file "${HOME}/.docker/config.json"
+  use_clean_docker_config
+  prepull_images || true
+
+  if docker_compose up --build -d >"$log" 2>&1; then
+    cat "$log"
+    rm -f "$log"
+    return 0
+  fi
+  cat "$log" >&2
+
+  if is_credential_pull_error "$log"; then
+    warn "BuildKit sigue fallando; probando builder clásico (DOCKER_BUILDKIT=0)..."
+    rm -f "$log"
+    DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker_compose up --build -d
     return $?
   fi
+
   rm -f "$log"
   return 1
 }
@@ -161,12 +220,12 @@ ensure_docker() {
     error "Docker no está instalado. Ejecuta: ./deploy.sh --install-docker (con sudo)"
     exit 1
   }
-  docker info >/dev/null 2>&1 || {
+  docker_cmd info >/dev/null 2>&1 || {
     error "Docker no responde. ¿Está el daemon activo? Prueba: sudo systemctl start docker"
     error "Si acabas de instalar Docker, puede que necesites cerrar sesión y volver a entrar (grupo docker)."
     exit 1
   }
-  docker compose version >/dev/null 2>&1 || {
+  docker_cmd compose version >/dev/null 2>&1 || {
     error "Falta 'docker compose'. Instala el plugin: apt install docker-compose-plugin"
     exit 1
   }
