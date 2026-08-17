@@ -269,9 +269,16 @@ read_credential() {
   grep -E "^${key}=" "$CREDENTIALS_FILE" | head -n1 | cut -d= -f2- | tr -d '\r'
 }
 
+nilo_stack_running() {
+  docker_compose ps --status running -q 2>/dev/null | grep -q .
+}
+
 check_ports() {
   local port="$1"
   local label="$2"
+  if nilo_stack_running; then
+    return 0
+  fi
   if command -v ss >/dev/null 2>&1; then
     if ss -tln | grep -q ":${port} "; then
       warn "Puerto ${port} (${label}) ya está en uso. Si no es NILO, puede fallar el arranque."
@@ -285,13 +292,20 @@ wait_for_health() {
   local i
   for ((i = 1; i <= HEALTH_RETRIES; i++)); do
     if curl -sf "$HEALTH_URL" >/dev/null 2>&1; then
-      info "API lista."
+      info "API lista (${i} intento(s))."
       return 0
+    fi
+    if (( i % 15 == 0 )); then
+      warn "Sigue arrancando... (${i}/${HEALTH_RETRIES}). Estado:"
+      docker_compose ps 2>/dev/null || true
     fi
     sleep "$HEALTH_SLEEP"
   done
-  error "La API no respondió a tiempo. Revisa logs: ./deploy.sh --logs"
+  error "La API no respondió a tiempo."
   docker_compose ps
+  error "Últimas líneas del log de la API:"
+  docker_compose logs api --tail 40 2>/dev/null || true
+  error "Revisa más logs con: ./deploy.sh --logs"
   return 1
 }
 
@@ -337,6 +351,10 @@ cmd_deploy() {
   setup_docker_config
   ensure_docker
   ensure_credentials
+
+  if nilo_stack_running; then
+    info "NILO ya estaba en ejecución; se reconstruirá/actualizará la API."
+  fi
 
   check_ports "$API_HOST_PORT" "API"
   check_ports "$MONGO_HOST_PORT" "MongoDB"

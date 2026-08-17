@@ -21,10 +21,12 @@ from urllib.parse import quote_plus
 from pydantic import Field, field_validator
 from pydantic_settings import (
     BaseSettings,
+    NoDecode,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
     YamlConfigSettingsSource,
 )
+from typing import Annotated
 
 CONFIG_FILE = os.getenv("NILO_CONFIG_FILE", "config.yaml")
 CREDENTIALS_FILE = os.getenv("NILO_CREDENTIALS_FILE", "credentials.env")
@@ -113,7 +115,7 @@ class Settings(BaseSettings):
     DEFAULT_HLS_SEGMENT_SECONDS: int = 6
 
     # --- CORS (config.yaml; override with CORS_ORIGINS env, comma-separated) ---
-    CORS_ORIGINS: list[str] = Field(
+    CORS_ORIGINS: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [
             "http://192.168.1.43:8080",
             "http://localhost:8080",
