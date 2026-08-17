@@ -205,6 +205,12 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# Dev TLS (autofirmado; generar con scripts/generate-dev-certs.sh)
+certs/*.pem
+certs/*.key
+certs/*.crt
+!certs/.gitkeep
+
 # Ruff stuff:
 .ruff_cache/
 

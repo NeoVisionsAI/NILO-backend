@@ -14,6 +14,8 @@
 #   ./deploy.sh --logs           # seguir logs de la API
 #   ./deploy.sh --status         # estado de contenedores
 #   ./deploy.sh --fix-docker-config  # quitar credsStore/credHelpers rotos
+#   ./deploy.sh --certs              # (re)generar certificados HTTPS de desarrollo
+#   NILO_HTTPS=0 ./deploy.sh         # solo HTTP (sin Caddy :8443)
 #
 set -euo pipefail
 
@@ -21,12 +23,18 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CREDENTIALS_FILE="${CREDENTIALS_FILE:-$ROOT_DIR/credentials.env}"
 CREDENTIALS_EXAMPLE="$ROOT_DIR/credentials.env.example"
 COMPOSE_FILE="$ROOT_DIR/docker-compose.yml"
+CERT_DIR="${CERT_DIR:-$ROOT_DIR/certs}"
+CERT_SCRIPT="$ROOT_DIR/scripts/generate-dev-certs.sh"
 
 API_HOST_PORT="${API_HOST_PORT:-8001}"
+API_HTTPS_PORT="${API_HTTPS_PORT:-8443}"
+NILO_DEV_HOST="${NILO_DEV_HOST:-192.168.1.43}"
+NILO_HTTPS="${NILO_HTTPS:-1}"
 MONGO_HOST_PORT="${MONGO_HOST_PORT:-27018}"
 MINIO_API_PORT="${MINIO_API_PORT:-9002}"
 MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-9003}"
 HEALTH_URL="http://localhost:${API_HOST_PORT}/health"
+HEALTH_HTTPS_URL="https://localhost:${API_HTTPS_PORT}/health"
 HEALTH_RETRIES="${HEALTH_RETRIES:-90}"
 HEALTH_SLEEP="${HEALTH_SLEEP:-2}"
 
@@ -61,7 +69,11 @@ docker_cmd() {
 }
 
 docker_compose() {
-  docker_cmd compose --env-file "$CREDENTIALS_FILE" -f "$COMPOSE_FILE" "$@"
+  local args=(compose --env-file "$CREDENTIALS_FILE" -f "$COMPOSE_FILE")
+  if [[ "$NILO_HTTPS" == "1" ]]; then
+    args+=(--profile https)
+  fi
+  docker_cmd "${args[@]}" "$@"
 }
 
 docker_config_is_broken() {
@@ -149,6 +161,29 @@ prepull_images() {
   docker_cmd pull python:3.13-slim
   docker_cmd pull mongo:7
   docker_cmd pull minio/minio:latest
+  if [[ "$NILO_HTTPS" == "1" ]]; then
+    docker_cmd pull caddy:2-alpine
+  fi
+}
+
+ensure_dev_certs() {
+  if [[ "$NILO_HTTPS" != "1" ]]; then
+    return 0
+  fi
+  if [[ -f "$CERT_DIR/cert.pem" && -f "$CERT_DIR/key.pem" ]]; then
+    return 0
+  fi
+  info "Generando certificados TLS de desarrollo (IP ${NILO_DEV_HOST})..."
+  require_command openssl
+  chmod +x "$CERT_SCRIPT" 2>/dev/null || true
+  NILO_DEV_HOST="$NILO_DEV_HOST" CERT_DIR="$CERT_DIR" "$CERT_SCRIPT"
+}
+
+cmd_certs() {
+  require_command openssl
+  chmod +x "$CERT_SCRIPT" 2>/dev/null || true
+  NILO_DEV_HOST="$NILO_DEV_HOST" CERT_DIR="$CERT_DIR" "$CERT_SCRIPT"
+  info "Reinicia el stack para aplicar: ./deploy.sh"
 }
 
 is_credential_pull_error() {
@@ -309,6 +344,24 @@ wait_for_health() {
   return 1
 }
 
+wait_for_https_health() {
+  if [[ "$NILO_HTTPS" != "1" ]]; then
+    return 0
+  fi
+  require_command curl
+  info "Comprobando HTTPS en ${HEALTH_HTTPS_URL} (cert autofirmado; curl -k)..."
+  local i
+  for ((i = 1; i <= 30; i++)); do
+    if curl -ksf "$HEALTH_HTTPS_URL" >/dev/null 2>&1; then
+      info "API HTTPS lista."
+      return 0
+    fi
+    sleep 2
+  done
+  warn "HTTPS aún no responde; revisa: docker compose --profile https logs caddy"
+  return 0
+}
+
 print_summary() {
   local admin_pass app_pass root_email root_pass clinician_email clinician_pass
 
@@ -322,9 +375,16 @@ print_summary() {
   echo
   info "NILO desplegado correctamente."
   echo
-  echo "  API:            http://localhost:${API_HOST_PORT}"
+  echo "  API (HTTP):     http://localhost:${API_HOST_PORT}"
   echo "  Swagger:        http://localhost:${API_HOST_PORT}/docs"
   echo "  Health:         ${HEALTH_URL}"
+  if [[ "$NILO_HTTPS" == "1" ]]; then
+    echo
+    echo "  API (HTTPS):    https://${NILO_DEV_HOST}:${API_HTTPS_PORT}/api/v1"
+    echo "  Health HTTPS:   https://${NILO_DEV_HOST}:${API_HTTPS_PORT}/health"
+    echo "  Swagger HTTPS:  https://${NILO_DEV_HOST}:${API_HTTPS_PORT}/docs"
+    warn "Cert autofirmado: acepta la excepción en el navegador/tablet o usa mkcert (scripts/generate-dev-certs.sh)."
+  fi
   echo
   echo "  Mongo (Compass): mongodb://admin:${admin_pass}@localhost:${MONGO_HOST_PORT}/?authSource=admin"
   echo "  BD aplicación:   nilo  (usuario app: nilo / ${app_pass})"
@@ -360,11 +420,16 @@ cmd_deploy() {
   check_ports "$MONGO_HOST_PORT" "MongoDB"
   check_ports "$MINIO_API_PORT" "MinIO"
   check_ports "$MINIO_CONSOLE_PORT" "MinIO consola"
+  if [[ "$NILO_HTTPS" == "1" ]]; then
+    check_ports "$API_HTTPS_PORT" "API HTTPS"
+    ensure_dev_certs
+  fi
 
-  info "Construyendo y levantando servicios (mongo, minio, api)..."
+  info "Construyendo y levantando servicios (mongo, minio, api${NILO_HTTPS:+ + caddy})..."
   compose_up_with_retry
 
   wait_for_health
+  wait_for_https_health
   print_summary
 }
 
@@ -420,6 +485,9 @@ main() {
       ;;
     --fix-docker-config)
       fix_docker_config_permanent
+      ;;
+    --certs)
+      cmd_certs
       ;;
     "")
       cmd_deploy

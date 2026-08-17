@@ -49,9 +49,23 @@ services:
       MONGODB_PORT: 27017
       MINIO_ENDPOINT: minio:9000
       # Comma-separated browser origins (frontend URL). Override on deploy if IP/hostname changes.
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://192.168.1.43:8080,http://localhost:8080,http://127.0.0.1:8080}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://192.168.1.43:8080,https://192.168.1.43:8080,http://localhost:8080,https://localhost:8080,http://127.0.0.1:8080,https://127.0.0.1:8080}
     ports:
       - "0.0.0.0:8001:8000"
+
+  # HTTPS en desarrollo (cert autofirmado en ./certs). API: https://<host>:8443/api/v1
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    profiles:
+      - https
+    depends_on:
+      - api
+    ports:
+      - "0.0.0.0:8443:8443"
+    volumes:
+      - ./certs:/certs:ro
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
 
 volumes:
   mongo_data:
