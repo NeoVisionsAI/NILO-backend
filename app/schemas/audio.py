@@ -8,6 +8,14 @@ from pydantic import BaseModel, ConfigDict
 from app.models.enums import AudioKind, ProcessingStatus, TranscriptionStatus
 
 
+class AudioUploadResponse(BaseModel):
+    id: PydanticObjectId
+    bucket: str
+    object_key: str
+    upload_url: str
+    expires_in: int
+
+
 class AudioUploadRequest(BaseModel):
     patient_id: PydanticObjectId
     kind: AudioKind = AudioKind.AMBIENT

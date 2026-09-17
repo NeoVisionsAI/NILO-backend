@@ -29,6 +29,9 @@ MONGODB_PROVISION: true
 # --- MinIO / S3 object storage (non-sensitive) ---
 # Access/secret keys are set in credentials.env.
 MINIO_ENDPOINT: localhost:9000
+# Presigned upload/download URLs for external clients (nilo-node, browsers).
+# Under docker compose override with the host LAN address, e.g. 192.168.1.43:9002
+MINIO_PUBLIC_ENDPOINT: 192.168.1.43:9002
 MINIO_SECURE: false
 MINIO_BUCKET: nilo-data
 MINIO_PRESIGN_EXPIRY: 3600

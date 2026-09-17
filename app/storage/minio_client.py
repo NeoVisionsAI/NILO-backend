@@ -17,18 +17,33 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 _client: Minio | None = None
+_presign_client: Minio | None = None
+
+
+def _build_minio_client(endpoint: str) -> Minio:
+    return Minio(
+        endpoint,
+        access_key=settings.MINIO_ACCESS_KEY,
+        secret_key=settings.MINIO_SECRET_KEY,
+        secure=settings.MINIO_SECURE,
+    )
 
 
 def get_minio() -> Minio:
+    """Internal client (API container → MinIO on the Docker network)."""
     global _client
     if _client is None:
-        _client = Minio(
-            settings.MINIO_ENDPOINT,
-            access_key=settings.MINIO_ACCESS_KEY,
-            secret_key=settings.MINIO_SECRET_KEY,
-            secure=settings.MINIO_SECURE,
-        )
+        _client = _build_minio_client(settings.MINIO_ENDPOINT)
     return _client
+
+
+def get_presign_minio() -> Minio:
+    """Client used to mint presigned URLs reachable from external agents."""
+    global _presign_client
+    if _presign_client is None:
+        endpoint = settings.MINIO_PUBLIC_ENDPOINT or settings.MINIO_ENDPOINT
+        _presign_client = _build_minio_client(endpoint)
+    return _presign_client
 
 
 def ensure_bucket(bucket: str | None = None) -> None:
@@ -89,7 +104,7 @@ def presigned_put_url(
     """Return a presigned URL the agent can use to PUT (upload) an object."""
     bucket = bucket or settings.MINIO_BUCKET
     expiry = expiry_seconds or settings.MINIO_PRESIGN_EXPIRY
-    return get_minio().presigned_put_object(
+    return get_presign_minio().presigned_put_object(
         bucket, object_key, expires=timedelta(seconds=expiry)
     )
 
@@ -102,7 +117,7 @@ def presigned_get_url(
     """Return a presigned URL to GET (download) an object."""
     bucket = bucket or settings.MINIO_BUCKET
     expiry = expiry_seconds or settings.MINIO_PRESIGN_EXPIRY
-    return get_minio().presigned_get_object(
+    return get_presign_minio().presigned_get_object(
         bucket, object_key, expires=timedelta(seconds=expiry)
     )
 

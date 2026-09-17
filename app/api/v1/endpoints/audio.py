@@ -17,17 +17,20 @@ from app.schemas.audio import (
     AudioOut,
     AudioTranscriptionUpdate,
     AudioUploadRequest,
+    AudioUploadResponse,
 )
-from app.schemas.common import PresignedDownload, PresignedUpload
+from app.schemas.common import PresignedDownload
 from app.storage import minio_client
 
 router = APIRouter()
 
 
-@router.post("", response_model=PresignedUpload, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "", response_model=AudioUploadResponse, status_code=status.HTTP_201_CREATED
+)
 async def request_audio_upload(
     payload: AudioUploadRequest, current_user: User = Depends(require_staff)
-) -> PresignedUpload:
+) -> AudioUploadResponse:
     filename = f"{int(payload.start_ts.timestamp())}_{payload.kind.value}.{payload.file_extension}"
     object_key = minio_client.build_object_key(
         patient_id=str(payload.patient_id),
@@ -49,7 +52,8 @@ async def request_audio_upload(
     )
     await audio.insert()
     upload_url = minio_client.presigned_put_url(object_key)
-    return PresignedUpload(
+    return AudioUploadResponse(
+        id=audio.id,
         bucket=settings.MINIO_BUCKET,
         object_key=object_key,
         upload_url=upload_url,

@@ -66,6 +66,8 @@ class Settings(BaseSettings):
 
     # --- MinIO / S3 object storage ---
     MINIO_ENDPOINT: str = "localhost:9000"  # config.yaml
+    # Host:port embedded in presigned URLs (must be reachable from capture agents).
+    MINIO_PUBLIC_ENDPOINT: str | None = None  # config.yaml
     MINIO_ACCESS_KEY: str = "minioadmin"  # credentials.env
     MINIO_SECRET_KEY: str = "minioadmin"  # credentials.env
     MINIO_SECURE: bool = False  # config.yaml

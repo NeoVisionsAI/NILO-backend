@@ -67,21 +67,25 @@ async def create_patient(
 
 @router.get("", response_model=list[PatientOut])
 async def list_patients(
+    node_id: PydanticObjectId | None = None,
     skip: int = 0,
     limit: int = 100,
     active_only: bool = True,
     actor: User = Depends(get_current_user),
 ) -> list[Patient]:
     if actor.type_user == UserRole.ROOT:
-        query = (
-            Patient.find(Patient.is_active == True)  # noqa: E712
-            if active_only
-            else Patient.find_all()
-        )
+        filters: list = []
+        if active_only:
+            filters.append(Patient.is_active == True)  # noqa: E712
+        if node_id is not None:
+            filters.append(Patient.node_id == node_id)
+        query = Patient.find(*filters) if filters else Patient.find_all()
     elif actor.type_user == UserRole.CLINICIAN:
         filters = [Patient.created_by == actor.id]
         if active_only:
             filters.append(Patient.is_active == True)  # noqa: E712
+        if node_id is not None:
+            filters.append(Patient.node_id == node_id)
         query = Patient.find(*filters)
     elif actor.type_user == UserRole.PATIENT:
         patient = await Patient.find_one(Patient.user_id == actor.id)

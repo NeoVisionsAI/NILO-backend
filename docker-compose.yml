@@ -48,6 +48,7 @@ services:
       MONGODB_HOST: mongo
       MONGODB_PORT: 27017
       MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-192.168.1.43:9002}
       # Comma-separated browser origins (frontend URL). Override on deploy if IP/hostname changes.
       CORS_ORIGINS: ${CORS_ORIGINS:-http://192.168.1.43:8080,https://192.168.1.43:8080,http://localhost:8080,https://localhost:8080,http://127.0.0.1:8080,https://127.0.0.1:8080}
     ports:
