@@ -1,0 +1,24 @@
+[Unit]
+Description=NILO backend API (uvicorn)
+Documentation=file://@INSTALL_DIR@/docs/05.vm_systemd_service.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@INSTALL_DIR@
+Environment=NILO_CONFIG_FILE=@INSTALL_DIR@/config.yaml
+Environment=NILO_CREDENTIALS_FILE=@INSTALL_DIR@/credentials.env
+EnvironmentFile=-@INSTALL_DIR@/credentials.env
+User=@SERVICE_USER@
+Group=@SERVICE_USER@
+ExecStart=@INSTALL_DIR@/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port @API_PORT@
+# Reinicio ante fallos (OOM, excepción no capturada, kill, etc.)
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=10
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

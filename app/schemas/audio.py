@@ -3,7 +3,7 @@
 from datetime import datetime
 
 from beanie import PydanticObjectId
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import AudioKind, ProcessingStatus, TranscriptionStatus
 
@@ -17,7 +17,12 @@ class AudioUploadResponse(BaseModel):
 
 
 class AudioUploadRequest(BaseModel):
+    session_id: PydanticObjectId
     patient_id: PydanticObjectId
+    node_id: PydanticObjectId | None = Field(
+        None,
+        description="ObjectId del nodo NILO de origen, si se conoce",
+    )
     kind: AudioKind = AudioKind.AMBIENT
     start_ts: datetime
     end_ts: datetime | None = None
@@ -35,7 +40,9 @@ class AudioOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: PydanticObjectId
+    session_id: PydanticObjectId
     patient_id: PydanticObjectId
+    node_id: PydanticObjectId | None = None
     kind: AudioKind
     start_ts: datetime
     end_ts: datetime | None = None

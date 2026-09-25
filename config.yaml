@@ -8,44 +8,37 @@ ENVIRONMENT: development
 DEBUG: true
 API_V1_PREFIX: /api/v1
 
-# --- MongoDB (non-sensitive) ---
-# Passwords live in credentials.env (MONGODB_ADMIN_PASSWORD, MONGODB_APP_PASSWORD).
-# NOTE: host/port here are how the API *connects*. Under docker compose they are
-# overridden (MONGODB_HOST=mongo, MONGODB_PORT=27017 -> the container's internal
-# port), so changing them here does NOT affect the docker deployment. To change
-# the port Docker publishes on the host, edit the mongo `ports:` in
-# docker-compose.yml.
-MONGODB_HOST: localhost
+# --- Infra: MongoDB + MinIO (un solo sitio para la conexión) ---
+# NILO_INFRA_HOST: IP o hostname donde escuchan Mongo y MinIO (puertos abajo).
+#   127.0.0.1  -> misma máquina (API local o en VM con Mongo/MinIO en el host vía puertos Docker).
+#   192.168.x.x -> otra máquina (p. ej. host físico si la API corre solo en una VM).
+# También puedes exportar NILO_INFRA_HOST=... sin editar este fichero.
+NILO_INFRA_HOST: 127.0.0.1
+# Puertos publicados en NILO_INFRA_HOST (docker-compose: mongo 27018, minio 9002).
 MONGODB_PORT: 27018
+MINIO_API_PORT: 9002
+# Opcional: IP/DNS distinta para URLs presignadas de MinIO (nilo-node, navegador).
+# Si no se define, se usa NILO_INFRA_HOST. En Docker all-in-one suele ser la IP LAN del host.
+# MINIO_PUBLIC_HOST: 192.168.1.43
+
+# --- MongoDB (usuarios; contraseñas en credentials.env) ---
+# MONGODB_HOST / MINIO_* se derivan de NILO_INFRA_HOST salvo override por env o docker-compose.
 MONGODB_DB: nilo
-# Admin user used ONLY at startup to provision the app user/database.
 MONGODB_ADMIN_USER: admin
 MONGODB_ADMIN_AUTH_SOURCE: admin
-# Application user (auto-created/updated at startup); used for all operations.
 MONGODB_APP_USER: nilo
-# Connect as admin at startup to ensure the app user + db exist.
 MONGODB_PROVISION: true
 
-# --- MinIO / S3 object storage (non-sensitive) ---
-# Access/secret keys are set in credentials.env.
-MINIO_ENDPOINT: localhost:9000
-# Presigned upload/download URLs for external clients (nilo-node, browsers).
-# Under docker compose override with the host LAN address, e.g. 192.168.1.43:9002
-MINIO_PUBLIC_ENDPOINT: 192.168.1.43:9002
+# --- MinIO / S3 (claves en credentials.env) ---
 MINIO_SECURE: false
 MINIO_BUCKET: nilo-data
 MINIO_PRESIGN_EXPIRY: 3600
-# Server-side encryption at rest (SSE-S3) as bucket default.
-# Requires a KMS configured on the MinIO server (see docker-compose.yml).
 MINIO_SSE: true
 
 # --- Security / JWT (non-sensitive) ---
 # JWT_SECRET_KEY is set in credentials.env.
 JWT_ALGORITHM: HS256
-# Access token is short-lived; the client renews it with the refresh token.
 ACCESS_TOKEN_EXPIRE_MINUTES: 60
-# Refresh token lifetime. While it is used within this window, the session can
-# be kept alive indefinitely (rotation issues a fresh refresh token each time).
 REFRESH_TOKEN_EXPIRE_MINUTES: 43200  # 30 days
 
 # --- Bootstrap root user (non-sensitive part) ---
@@ -53,26 +46,16 @@ REFRESH_TOKEN_EXPIRE_MINUTES: 43200  # 30 days
 ROOT_FULL_NAME: NILO Root
 
 # --- Seed demo users (non-sensitive part) ---
-# When true, a demo clinician and patient are created on startup so you can log
-# in right after `docker compose up`. Their emails/passwords live in
-# credentials.env (SEED_CLINICIAN_*, SEED_PATIENT_*). Set to false in production.
 SEED_USERS: true
 
 # --- User photos ---
-# Photos are stored as base64 in the DB (encrypted at rest), not as files.
-# Max accepted decoded image size in bytes (keep it small: it lives inside the
-# user document, base64-encoded and encrypted).
 MAX_PHOTO_BYTES: 2097152  # 2 MB
 
 # --- Video / recording defaults ---
-# Hybrid strategy: short HLS segments for live view + consolidated archive chunks.
 DEFAULT_VIDEO_CHUNK_SECONDS: 300
 DEFAULT_HLS_SEGMENT_SECONDS: 6
 
 # --- CORS ---
-# Browser origins allowed to call this API (scheme + host + port must match exactly).
-# Override at runtime with CORS_ORIGINS env (comma-separated), e.g.:
-#   CORS_ORIGINS=https://192.168.1.43:8080,http://192.168.1.43:8080,http://localhost:8080
 CORS_ORIGINS:
   - "http://192.168.1.43:8080"
   - "https://192.168.1.43:8080"
@@ -80,6 +63,4 @@ CORS_ORIGINS:
   - "https://localhost:8080"
   - "http://127.0.0.1:8080"
   - "https://127.0.0.1:8080"
-# In development, also allow http(s)://<hostname>:<port> and private LAN IPs.
-# Disable in production (set to null or empty).
 CORS_ORIGIN_REGEX: "^https?://(localhost|127\\.0\\.0\\.1|192\\.168\\.\\d{1,3}\\.\\d{1,3}|10\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}|172\\.(1[6-9]|2\\d|3[0-1])\\.\\d{1,3}\\.\\d{1,3}|[\\w-]+(?:\\.[\\w-]+)*):\\d+$"

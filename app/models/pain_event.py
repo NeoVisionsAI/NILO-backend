@@ -14,7 +14,9 @@ from app.models.enums import LandmarkSource, ProcessingStatus
 
 
 class PainEvent(Document, TimestampMixin):
+    session_id: Indexed(PydanticObjectId)  # type: ignore[valid-type]
     patient_id: Indexed(PydanticObjectId)  # type: ignore[valid-type]
+    node_id: PydanticObjectId | None = None
 
     start_ts: datetime
     end_ts: datetime | None = None

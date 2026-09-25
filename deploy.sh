@@ -7,7 +7,8 @@
 # de aplicación (nilo) al iniciar (MONGODB_PROVISION=true).
 #
 # Uso:
-#   ./deploy.sh                  # levantar todo
+#   ./deploy.sh                  # levantar todo + servicio systemd (pide sudo si hace falta)
+#   sudo ./deploy.sh             # recomendado la 1ª vez (arranque automático sin preguntar)
 #   ./deploy.sh --install-docker # instalar Docker (Debian/Ubuntu) y levantar
 #   ./deploy.sh --down           # parar y quitar contenedores
 #   ./deploy.sh --down -v        # además borrar volúmenes (reset Mongo/MinIO)
@@ -16,6 +17,9 @@
 #   ./deploy.sh --fix-docker-config  # quitar credsStore/credHelpers rotos
 #   ./deploy.sh --certs              # (re)generar certificados HTTPS de desarrollo
 #   NILO_HTTPS=0 ./deploy.sh         # solo HTTP (sin Caddy :8443)
+#   NILO_INFRA_HOST=192.168.1.10 ./deploy.sh  # no aplica al stack completo (usa red Docker);
+#     para API en VM: config.yaml + docker-compose.api-only.yml
+#   NILO_SYSTEMD=0 ./deploy.sh         # no instalar servicio systemd al desplegar
 #
 set -euo pipefail
 
@@ -33,6 +37,8 @@ NILO_HTTPS="${NILO_HTTPS:-1}"
 MONGO_HOST_PORT="${MONGO_HOST_PORT:-27018}"
 MINIO_API_PORT="${MINIO_API_PORT:-9002}"
 MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-9003}"
+NILO_SYSTEMD="${NILO_SYSTEMD:-1}"
+SKIP_SYSTEMD=0
 HEALTH_URL="http://localhost:${API_HOST_PORT}/health"
 HEALTH_HTTPS_URL="https://localhost:${API_HTTPS_PORT}/health"
 HEALTH_RETRIES="${HEALTH_RETRIES:-90}"
@@ -402,8 +408,64 @@ print_summary() {
   echo "      -H 'Content-Type: application/x-www-form-urlencoded' \\"
   echo "      -d 'username=${root_email}&password=${root_pass}'"
   echo
+  if [[ "$NILO_SYSTEMD" != "0" && "$SKIP_SYSTEMD" != "1" ]] && command -v systemctl >/dev/null 2>&1; then
+    if systemctl is-enabled nilo-backend.service >/dev/null 2>&1; then
+      echo "  Arranque automático: nilo-backend.service (enabled)"
+      echo "    systemctl status nilo-backend | journalctl -u nilo-backend -f"
+      echo
+    fi
+  fi
   warn "Mongo y MinIO corren en Docker; el usuario 'nilo' se crea/actualiza solo al arrancar la API."
   warn "Si cambias MONGODB_ADMIN_PASSWORD tras el primer despliegue, resetea volúmenes: ./deploy.sh --down -v"
+}
+
+ensure_docker_boot() {
+  command -v systemctl >/dev/null 2>&1 || return 0
+  if systemctl is-enabled docker >/dev/null 2>&1; then
+    return 0
+  fi
+  info "Habilitando Docker al arranque del sistema..."
+  if [[ "$(id -u)" -eq 0 ]]; then
+    systemctl enable docker >/dev/null 2>&1 || true
+  elif sudo -n true 2>/dev/null; then
+    sudo systemctl enable docker >/dev/null 2>&1 || true
+  else
+    warn "Ejecuta: sudo systemctl enable docker"
+  fi
+}
+
+install_systemd_service() {
+  [[ "$NILO_SYSTEMD" == "0" || "$SKIP_SYSTEMD" == "1" ]] && return 0
+  local install_script="$ROOT_DIR/scripts/install-systemd-service.sh"
+  [[ -x "$install_script" ]] || chmod +x "$install_script"
+
+  if ! command -v systemctl >/dev/null 2>&1; then
+    warn "systemd no disponible; omitiendo servicio nilo-backend."
+    return 0
+  fi
+
+  local run_user
+  run_user="$(whoami)"
+  if [[ "$(id -u)" -eq 0 && -n "${SUDO_USER:-}" ]]; then
+    run_user="$SUDO_USER"
+  fi
+
+  info "Configurando arranque automático (systemd nilo-backend + recuperación)..."
+  ensure_docker_boot
+
+  local -a install_args=(--full --user "$run_user" --enable-only)
+  if [[ "$(id -u)" -eq 0 ]]; then
+    "$install_script" "${install_args[@]}"
+  elif sudo -n true 2>/dev/null; then
+    sudo "$install_script" "${install_args[@]}"
+  else
+    warn "Se necesita sudo una vez para instalar el servicio de arranque:"
+    warn "  sudo $install_script --full --user $run_user --enable-only"
+    warn "O vuelve a ejecutar: sudo ./deploy.sh"
+    return 0
+  fi
+
+  info "Servicio nilo-backend.service habilitado al arranque (contenedores: restart always + healthcheck)."
 }
 
 cmd_deploy() {
@@ -426,10 +488,13 @@ cmd_deploy() {
   fi
 
   info "Construyendo y levantando servicios (mongo, minio, api${NILO_HTTPS:+ + caddy})..."
+  # URLs presignadas MinIO para clientes en LAN (nilo-node); conexión interna sigue siendo minio:9000.
+  export MINIO_PUBLIC_HOST="${MINIO_PUBLIC_HOST:-$NILO_DEV_HOST}"
   compose_up_with_retry
 
   wait_for_health
   wait_for_https_health
+  install_systemd_service
   print_summary
 }
 
@@ -488,6 +553,11 @@ main() {
       ;;
     --certs)
       cmd_certs
+      ;;
+    --no-systemd)
+      SKIP_SYSTEMD=1
+      shift
+      cmd_deploy
       ;;
     "")
       cmd_deploy

@@ -18,7 +18,7 @@ import os
 from functools import lru_cache
 from urllib.parse import quote_plus
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
     NoDecode,
@@ -26,7 +26,7 @@ from pydantic_settings import (
     SettingsConfigDict,
     YamlConfigSettingsSource,
 )
-from typing import Annotated
+from typing import Annotated, Self
 
 CONFIG_FILE = os.getenv("NILO_CONFIG_FILE", "config.yaml")
 CREDENTIALS_FILE = os.getenv("NILO_CREDENTIALS_FILE", "credentials.env")
@@ -48,9 +48,19 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     DEBUG: bool = True
 
-    # --- MongoDB (all in config.yaml) ---
-    MONGODB_HOST: str = "localhost"
-    MONGODB_PORT: int = 27017
+    # --- Infra host: MongoDB + MinIO (config.yaml) ---
+    # Cambia solo NILO_INFRA_HOST si la API corre en otra máquina (p. ej. VM) y
+    # Mongo/MinIO están en el host físico. 127.0.0.1 = misma máquina vía puertos publicados.
+    NILO_INFRA_HOST: str = "127.0.0.1"
+    MONGODB_PORT: int = 27018
+    MINIO_API_PORT: int = 9002
+    # Presigned MinIO URLs para nilo-node/navegador (host:puerto). Si no se define,
+    # se usa NILO_INFRA_HOST. Pon otra IP si los clientes no pueden usar 127.0.0.1.
+    MINIO_PUBLIC_HOST: str | None = None
+
+    # --- MongoDB (config.yaml + credentials.env passwords) ---
+    # Normalmente derivados de NILO_INFRA_HOST; docker-compose los sobreescribe (mongo:27017).
+    MONGODB_HOST: str | None = None
     MONGODB_DB: str = "nilo"
     # Admin credentials, used ONLY at startup to provision the app user/db.
     MONGODB_ADMIN_USER: str = "admin"
@@ -65,9 +75,9 @@ class Settings(BaseSettings):
     MONGODB_PROVISION: bool = True
 
     # --- MinIO / S3 object storage ---
-    MINIO_ENDPOINT: str = "localhost:9000"  # config.yaml
-    # Host:port embedded in presigned URLs (must be reachable from capture agents).
-    MINIO_PUBLIC_ENDPOINT: str | None = None  # config.yaml
+    # Derivado de NILO_INFRA_HOST salvo override (p. ej. minio:9000 en docker-compose).
+    MINIO_ENDPOINT: str | None = None
+    MINIO_PUBLIC_ENDPOINT: str | None = None
     MINIO_ACCESS_KEY: str = "minioadmin"  # credentials.env
     MINIO_SECRET_KEY: str = "minioadmin"  # credentials.env
     MINIO_SECURE: bool = False  # config.yaml
@@ -148,6 +158,24 @@ class Settings(BaseSettings):
     # Optional regex for dev/LAN (tablets often use hostname instead of IP).
     # Set to empty string in production. Env: CORS_ORIGIN_REGEX=...
     CORS_ORIGIN_REGEX: str | None = None
+
+    @model_validator(mode="after")
+    def derive_infra_connection_settings(self) -> Self:
+        host = self.NILO_INFRA_HOST.strip()
+        if self.MONGODB_HOST is None:
+            object.__setattr__(self, "MONGODB_HOST", host)
+        if self.MINIO_ENDPOINT is None:
+            object.__setattr__(
+                self, "MINIO_ENDPOINT", f"{host}:{self.MINIO_API_PORT}"
+            )
+        if self.MINIO_PUBLIC_ENDPOINT is None:
+            public_host = (self.MINIO_PUBLIC_HOST or host).strip()
+            object.__setattr__(
+                self,
+                "MINIO_PUBLIC_ENDPOINT",
+                f"{public_host}:{self.MINIO_API_PORT}",
+            )
+        return self
 
     @property
     def mongodb_admin_uri(self) -> str:

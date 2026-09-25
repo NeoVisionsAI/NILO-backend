@@ -14,7 +14,9 @@ from app.models.enums import LandmarkSource, ProcessingStatus
 
 
 class BodyLandmarks(Document, TimestampMixin):
+    session_id: Indexed(PydanticObjectId)  # type: ignore[valid-type]
     patient_id: Indexed(PydanticObjectId)  # type: ignore[valid-type]
+    node_id: PydanticObjectId | None = None
     # Optional link to the video segment the landmarks were extracted from.
     video_segment_id: PydanticObjectId | None = None
 

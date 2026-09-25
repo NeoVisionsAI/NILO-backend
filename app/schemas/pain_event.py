@@ -3,13 +3,18 @@
 from datetime import datetime
 
 from beanie import PydanticObjectId
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import LandmarkSource, ProcessingStatus
 
 
 class PainEventCreate(BaseModel):
+    session_id: PydanticObjectId
     patient_id: PydanticObjectId
+    node_id: PydanticObjectId | None = Field(
+        None,
+        description="ObjectId del nodo NILO de origen, si se conoce",
+    )
     start_ts: datetime
     end_ts: datetime | None = None
     duration_seconds: float | None = None
@@ -23,7 +28,9 @@ class PainEventOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: PydanticObjectId
+    session_id: PydanticObjectId
     patient_id: PydanticObjectId
+    node_id: PydanticObjectId | None = None
     start_ts: datetime
     end_ts: datetime | None = None
     duration_seconds: float | None = None

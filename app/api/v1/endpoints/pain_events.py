@@ -15,6 +15,7 @@ from app.models.pain_event import PainEvent
 from app.models.user import User
 from app.schemas.common import PresignedDownload
 from app.schemas.pain_event import PainEventCreate, PainEventOut
+from app.services.monitoring_session import require_active_ingestion
 from app.storage import minio_client
 
 router = APIRouter()
@@ -33,15 +34,23 @@ class _PainEventUploadResponse(PainEventOut):
 async def create_pain_event(
     payload: PainEventCreate, current_user: User = Depends(require_staff)
 ) -> _PainEventUploadResponse:
+    await require_active_ingestion(
+        session_id=payload.session_id,
+        patient_id=payload.patient_id,
+        node_id=payload.node_id,
+    )
     filename = f"pain_{int(payload.start_ts.timestamp())}.{payload.file_extension}"
     object_key = minio_client.build_object_key(
         patient_id=str(payload.patient_id),
         category="pain",
         filename=filename,
         ts=payload.start_ts,
+        subpath=str(payload.session_id),
     )
     event = PainEvent(
+        session_id=payload.session_id,
         patient_id=payload.patient_id,
+        node_id=payload.node_id,
         start_ts=payload.start_ts,
         end_ts=payload.end_ts,
         duration_seconds=payload.duration_seconds,
@@ -65,12 +74,19 @@ async def create_pain_event(
 @router.get("", response_model=list[PainEventOut])
 async def list_pain_events(
     patient_id: PydanticObjectId,
+    session_id: PydanticObjectId | None = None,
+    node_id: PydanticObjectId | None = None,
     skip: int = 0,
     limit: int = 200,
     _: User = Depends(get_current_user),
 ) -> list[PainEvent]:
+    conditions = [PainEvent.patient_id == patient_id]
+    if session_id is not None:
+        conditions.append(PainEvent.session_id == session_id)
+    if node_id is not None:
+        conditions.append(PainEvent.node_id == node_id)
     return (
-        await PainEvent.find(PainEvent.patient_id == patient_id)
+        await PainEvent.find(*conditions)
         .sort(-PainEvent.start_ts)
         .skip(skip)
         .limit(limit)

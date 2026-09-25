@@ -1,0 +1,25 @@
+[Unit]
+Description=NILO backend API (Docker Compose)
+Documentation=file://@INSTALL_DIR@/docs/05.vm_systemd_service.md
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=@INSTALL_DIR@
+Environment=NILO_CREDENTIALS_FILE=@INSTALL_DIR@/credentials.env
+# Usuario con acceso a Docker (grupo docker). Cambiar si instalas como root.
+User=@SERVICE_USER@
+Group=docker
+ExecStart=@DOCKER_COMPOSE@ -f @COMPOSE_FILE@ --env-file @INSTALL_DIR@/credentials.env up -d --remove-orphans
+ExecStop=@DOCKER_COMPOSE@ -f @COMPOSE_FILE@ --env-file @INSTALL_DIR@/credentials.env down
+ExecReload=@DOCKER_COMPOSE@ -f @COMPOSE_FILE@ --env-file @INSTALL_DIR@/credentials.env up -d --build --remove-orphans
+# Si el arranque falla (Docker caído, build roto), reintentar.
+Restart=on-failure
+RestartSec=15
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

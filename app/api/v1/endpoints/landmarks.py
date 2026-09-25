@@ -15,6 +15,7 @@ from app.models.landmarks import BodyLandmarks
 from app.models.user import User
 from app.schemas.common import PresignedDownload
 from app.schemas.landmarks import LandmarksOut, LandmarksUploadRequest
+from app.services.monitoring_session import require_active_ingestion
 from app.storage import minio_client
 
 router = APIRouter()
@@ -33,15 +34,23 @@ class _LandmarksUploadResponse(LandmarksOut):
 async def request_landmarks_upload(
     payload: LandmarksUploadRequest, _: User = Depends(require_staff)
 ) -> _LandmarksUploadResponse:
+    await require_active_ingestion(
+        session_id=payload.session_id,
+        patient_id=payload.patient_id,
+        node_id=payload.node_id,
+    )
     filename = f"landmarks_{int(payload.start_ts.timestamp())}_{payload.source.value}.{payload.file_extension}"
     object_key = minio_client.build_object_key(
         patient_id=str(payload.patient_id),
         category="landmarks",
         filename=filename,
         ts=payload.start_ts,
+        subpath=str(payload.session_id),
     )
     doc = BodyLandmarks(
+        session_id=payload.session_id,
         patient_id=payload.patient_id,
+        node_id=payload.node_id,
         video_segment_id=payload.video_segment_id,
         source=payload.source,
         model_name=payload.model_name,
@@ -64,12 +73,19 @@ async def request_landmarks_upload(
 @router.get("", response_model=list[LandmarksOut])
 async def list_landmarks(
     patient_id: PydanticObjectId,
+    session_id: PydanticObjectId | None = None,
+    node_id: PydanticObjectId | None = None,
     skip: int = 0,
     limit: int = 200,
     _: User = Depends(get_current_user),
 ) -> list[BodyLandmarks]:
+    conditions = [BodyLandmarks.patient_id == patient_id]
+    if session_id is not None:
+        conditions.append(BodyLandmarks.session_id == session_id)
+    if node_id is not None:
+        conditions.append(BodyLandmarks.node_id == node_id)
     return (
-        await BodyLandmarks.find(BodyLandmarks.patient_id == patient_id)
+        await BodyLandmarks.find(*conditions)
         .sort(-BodyLandmarks.start_ts)
         .skip(skip)
         .limit(limit)

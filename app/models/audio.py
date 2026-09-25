@@ -13,7 +13,9 @@ from app.models.enums import AudioKind, ProcessingStatus, TranscriptionStatus
 
 
 class AudioRecording(Document, TimestampMixin):
+    session_id: Indexed(PydanticObjectId)  # type: ignore[valid-type]
     patient_id: Indexed(PydanticObjectId)  # type: ignore[valid-type]
+    node_id: PydanticObjectId | None = None
     kind: AudioKind = AudioKind.AMBIENT
 
     start_ts: datetime

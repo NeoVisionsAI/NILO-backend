@@ -15,7 +15,9 @@ from app.models.base import TimestampMixin
 
 
 class PhysiologicalReading(Document, TimestampMixin):
+    session_id: Indexed(PydanticObjectId)  # type: ignore[valid-type]
     patient_id: Indexed(PydanticObjectId)  # type: ignore[valid-type]
+    node_id: PydanticObjectId | None = None
     device_id: str | None = None
     # Instant the reading was captured (UTC).
     timestamp: Indexed(datetime)  # type: ignore[valid-type]

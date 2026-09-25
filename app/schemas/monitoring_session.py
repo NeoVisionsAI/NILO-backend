@@ -1,43 +1,64 @@
-"""Recording and video segment schemas."""
+"""Monitoring session and video segment API schemas."""
 
 from datetime import datetime
 
 from beanie import PydanticObjectId
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import (
+    MonitoringSessionStatus,
     ProcessingStatus,
-    RecordingStatus,
     SegmentFormat,
     SegmentKind,
 )
 from app.schemas.common import PresignedUpload
 
 
-class RecordingCreate(BaseModel):
+class MonitoringSessionCreate(BaseModel):
     patient_id: PydanticObjectId
-    device_id: str | None = None
+    node_id: PydanticObjectId | None = Field(
+        None,
+        description="ObjectId del nodo NILO (dispositivo de captura), si se conoce",
+    )
+    external_session_id: str | None = Field(
+        None,
+        description="Client-side session id (e.g. UUID from nilo-node)",
+    )
     archive_chunk_seconds: int | None = None
     hls_segment_seconds: int | None = None
 
 
-class RecordingOut(BaseModel):
+class MonitoringSessionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: PydanticObjectId
     patient_id: PydanticObjectId
-    device_id: str | None = None
+    node_id: PydanticObjectId | None = None
+    external_session_id: str | None = None
     started_at: datetime
     ended_at: datetime | None = None
-    status: RecordingStatus
+    status: MonitoringSessionStatus
     archive_chunk_seconds: int
     hls_segment_seconds: int
     hls_manifest_key: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class SessionOverviewOut(BaseModel):
+    session: MonitoringSessionOut
+    video_segments: int
+    audio_clips: int
+    physiological_readings: int
+    landmarks_batches: int
+    pain_events: int
 
 
 class SegmentUploadRequest(BaseModel):
-    """Client asks for a presigned URL to upload a new video chunk."""
-
+    node_id: PydanticObjectId | None = Field(
+        None,
+        description="ObjectId del nodo NILO que genera el segmento, si se conoce",
+    )
     seq: int = 0
     kind: SegmentKind = SegmentKind.ARCHIVE
     fmt: SegmentFormat = SegmentFormat.FMP4
@@ -55,8 +76,9 @@ class SegmentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: PydanticObjectId
-    recording_id: PydanticObjectId
+    session_id: PydanticObjectId
     patient_id: PydanticObjectId
+    node_id: PydanticObjectId | None = None
     seq: int
     kind: SegmentKind
     fmt: SegmentFormat
@@ -70,7 +92,5 @@ class SegmentOut(BaseModel):
 
 
 class SegmentUploadResponse(BaseModel):
-    """Segment metadata plus the presigned URL to upload its binary."""
-
     segment: SegmentOut
     upload: PresignedUpload

@@ -12,7 +12,7 @@ from app.api.v1.endpoints import (
     pain_events,
     patients,
     physiological,
-    recordings,
+    sessions,
     users,
 )
 
@@ -26,7 +26,7 @@ api_router.include_router(
     patients.router, prefix="/patients", tags=["patients"]
 )
 api_router.include_router(
-    recordings.router, prefix="/recordings", tags=["recordings"]
+    sessions.router, prefix="/sessions", tags=["sessions"]
 )
 api_router.include_router(
     physiological.router,

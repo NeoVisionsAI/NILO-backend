@@ -48,10 +48,13 @@ El binario de cada chunk vive en **MinIO**; MongoDB solo guarda metadatos (`pati
 
 **Flujo de subida (presigned):**
 
-1. Se crea un `Recording` (sesión) para un paciente.
-2. Por cada chunk se hace `POST /recordings/{id}/segments` con los metadatos → devuelve un `VideoSegment` (estado `pending_upload`) y una **presigned PUT URL**.
-3. El agente sube el binario directamente a esa URL (MinIO).
-4. Se confirma con `POST /recordings/segments/{segment_id}/confirm` → el backend verifica el objeto y marca `uploaded`.
+1. Se crea una **`MonitoringSession`** (sesión de monitorización) para un paciente: `POST /sessions`.
+2. Todas las ingestas llevan **`session_id`**. **`node_id`** es opcional pero recomendado para saber qué dispositivo NILO originó cada dato.
+3. Por cada chunk de vídeo: `POST /sessions/{session_id}/video-segments` → devuelve un `VideoSegment` (`pending_upload`) y una **presigned PUT URL**.
+4. El agente sube el binario directamente a MinIO.
+5. Confirmación: `POST /sessions/video-segments/{segment_id}/confirm` → estado `uploaded`.
+
+Documentación detallada: [`docs/04.monitoring_sessions.md`](docs/04.monitoring_sessions.md) y [`docs/02.nilo_node_ingestion_spec.md`](docs/02.nilo_node_ingestion_spec.md).
 
 El mismo patrón (upload → confirm → download) se usa para audio, eventos de dolor, landmarks y documentos médicos.
 
@@ -77,7 +80,7 @@ app/
 ├── storage/
 │   └── minio_client.py     # Cliente MinIO, presigned URLs, claves de objeto
 ├── models/                 # Documentos Beanie
-│   ├── user.py, patient.py, recording.py, physiological.py,
+│   ├── user.py, patient.py, monitoring_session.py, physiological.py,
 │   ├── audio.py, pain_event.py, landmarks.py, medical_document.py
 │   └── enums.py, base.py, fields.py (tipos cifrados)
 ├── schemas/                # Modelos Pydantic de request/response
@@ -85,7 +88,7 @@ app/
     ├── deps.py             # Auth + control de roles
     └── v1/
         ├── router.py       # Router agregado
-        └── endpoints/      # auth, users, patients, recordings, physiological,
+        └── endpoints/      # auth, users, patients, sessions, physiological,
                             # audio, pain_events, landmarks, medical_documents
 ```
 
@@ -93,10 +96,12 @@ app/
 
 La configuración está separada en dos ficheros:
 
-- **`config.yaml`** — ajustes **no sensibles** (nombres, puertos, bucket, tamaños de chunk, CORS, algoritmo JWT, expiraciones...). Se versiona y se incluye en la imagen Docker.
-- **`credentials.env`** — **secretos** (URI de Mongo, claves de MinIO, `JWT_SECRET_KEY`, credenciales del root). **No se versiona** (está en `.gitignore`); parte de `credentials.env.example`.
+- **`config.yaml`** — ajustes **no sensibles**. Para Mongo/MinIO en otra máquina, cambia **`NILO_INFRA_HOST`** (por defecto `127.0.0.1` = misma máquina vía puertos `27018` / `9002`). Opcional: **`MINIO_PUBLIC_HOST`** si nilo-node debe usar otra IP en las URLs presignadas.
+- **`credentials.env`** — **secretos** (contraseñas Mongo, claves MinIO, JWT, etc.).
 
-**Precedencia** (de mayor a menor): variable de entorno > `credentials.env` > `config.yaml`. Por eso en Docker basta con inyectar overrides como variables de entorno.
+**API en VM, Mongo/MinIO en el host:** en el host `docker compose up mongo minio`; en la VM edita `NILO_INFRA_HOST` (IP del host) o usa `docker-compose.api-only.yml`. **Arranque al boot y reinicio automático:** [`docs/05.vm_systemd_service.md`](docs/05.vm_systemd_service.md) y `sudo ./scripts/install-systemd-service.sh`.
+
+**Precedencia** (de mayor a menor): variable de entorno > `credentials.env` > `config.yaml`. El `docker-compose.yml` completo sobreescribe `MONGODB_HOST`/`MINIO_ENDPOINT` con la red interna (`mongo`, `minio:9000`); las URLs presignadas siguen saliendo de `NILO_INFRA_HOST` / `MINIO_PUBLIC_HOST`.
 
 Las rutas de ambos ficheros pueden cambiarse con `NILO_CONFIG_FILE` y `NILO_CREDENTIALS_FILE`.
 
@@ -110,13 +115,16 @@ cp credentials.env.example credentials.env   # y rellena los secretos
 
 ```bash
 cp credentials.env.example credentials.env    # ajusta secretos
-docker compose --env-file credentials.env up --build
+sudo ./deploy.sh    # recomendado: despliega y habilita nilo-backend.service al arranque
+# o: ./deploy.sh    # igual, pedirá sudo para systemd si hace falta
 ```
+
+Tras un despliegue correcto, quedan activos: contenedores con `restart: always`, healthcheck en la API, **`systemctl enable docker`** (si aplica) y **`nilo-backend.service`** para volver a levantar el stack tras un reinicio. Desactivar solo systemd: `NILO_SYSTEMD=0 ./deploy.sh`. Detalle: [`docs/05.vm_systemd_service.md`](docs/05.vm_systemd_service.md).
 
 > El flag `--env-file credentials.env` hace que los secretos estén disponibles tanto para la sustitución de variables del compose (MinIO) como dentro del contenedor de la API.
 
-- API: http://localhost:8000 — docs en http://localhost:8000/docs
-- MinIO API: http://localhost:9000 — consola: http://localhost:9001
+- API: http://localhost:8001 — docs en http://localhost:8001/docs
+- MinIO API: http://localhost:9002 — consola: http://localhost:9003
 
 Dentro de la red de contenedores, el compose sobreescribe `MONGODB_HOST` (`mongo`) y `MINIO_ENDPOINT` (`minio:9000`); el resto de la configuración viene de `config.yaml` (incluido en la imagen).
 

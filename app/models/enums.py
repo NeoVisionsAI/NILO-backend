@@ -31,10 +31,14 @@ class Sex(str, Enum):
     UNKNOWN = "unknown"
 
 
-class RecordingStatus(str, Enum):
+class MonitoringSessionStatus(str, Enum):
     ACTIVE = "active"
     COMPLETED = "completed"
     ERROR = "error"
+
+
+# Deprecated alias (removed API paths used "Recording").
+RecordingStatus = MonitoringSessionStatus
 
 
 class SegmentFormat(str, Enum):

@@ -5,7 +5,7 @@
 services:
   mongo:
     image: mongo:7
-    restart: unless-stopped
+    restart: always
     # Root/admin credentials must match MONGODB_ADMIN_* in credentials.env.
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGODB_ADMIN_USER:-admin}
@@ -19,7 +19,7 @@ services:
 
   minio:
     image: minio/minio:latest
-    restart: unless-stopped
+    restart: always
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
@@ -34,7 +34,7 @@ services:
 
   api:
     build: .
-    restart: unless-stopped
+    restart: always
     depends_on:
       - mongo
       - minio
@@ -44,15 +44,28 @@ services:
     # Container-network overrides (win over config.yaml and credentials.env).
     # These use the INTERNAL container ports/hostnames, independent of the
     # host-side port mappings above.
+    # Red interna Docker (no usar NILO_INFRA_HOST aquí). Presigned MinIO: ver config.yaml.
     environment:
       MONGODB_HOST: mongo
       MONGODB_PORT: 27017
       MINIO_ENDPOINT: minio:9000
-      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-192.168.1.43:9002}
+      NILO_INFRA_HOST: ${NILO_INFRA_HOST:-127.0.0.1}
+      MINIO_API_PORT: ${MINIO_API_PORT:-9002}
+      MINIO_PUBLIC_HOST: ${MINIO_PUBLIC_HOST:-}
       # Comma-separated browser origins (frontend URL). Override on deploy if IP/hostname changes.
       CORS_ORIGINS: ${CORS_ORIGINS:-http://192.168.1.43:8080,https://192.168.1.43:8080,http://localhost:8080,https://localhost:8080,http://127.0.0.1:8080,https://127.0.0.1:8080}
     ports:
       - "0.0.0.0:8001:8000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'python -c "import urllib.request; urllib.request.urlopen(''http://127.0.0.1:8000/health'', timeout=5)"',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
 
   # HTTPS en desarrollo (cert autofirmado en ./certs). API: https://<host>:8443/api/v1
   caddy:

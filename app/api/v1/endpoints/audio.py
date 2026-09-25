@@ -20,6 +20,7 @@ from app.schemas.audio import (
     AudioUploadResponse,
 )
 from app.schemas.common import PresignedDownload
+from app.services.monitoring_session import require_active_ingestion
 from app.storage import minio_client
 
 router = APIRouter()
@@ -31,15 +32,23 @@ router = APIRouter()
 async def request_audio_upload(
     payload: AudioUploadRequest, current_user: User = Depends(require_staff)
 ) -> AudioUploadResponse:
+    await require_active_ingestion(
+        session_id=payload.session_id,
+        patient_id=payload.patient_id,
+        node_id=payload.node_id,
+    )
     filename = f"{int(payload.start_ts.timestamp())}_{payload.kind.value}.{payload.file_extension}"
     object_key = minio_client.build_object_key(
         patient_id=str(payload.patient_id),
         category="audio",
         filename=filename,
         ts=payload.start_ts,
+        subpath=str(payload.session_id),
     )
     audio = AudioRecording(
+        session_id=payload.session_id,
         patient_id=payload.patient_id,
+        node_id=payload.node_id,
         kind=payload.kind,
         start_ts=payload.start_ts,
         end_ts=payload.end_ts,
@@ -64,12 +73,19 @@ async def request_audio_upload(
 @router.get("", response_model=list[AudioOut])
 async def list_audio(
     patient_id: PydanticObjectId,
+    session_id: PydanticObjectId | None = None,
+    node_id: PydanticObjectId | None = None,
     skip: int = 0,
     limit: int = 200,
     _: User = Depends(get_current_user),
 ) -> list[AudioRecording]:
+    conditions = [AudioRecording.patient_id == patient_id]
+    if session_id is not None:
+        conditions.append(AudioRecording.session_id == session_id)
+    if node_id is not None:
+        conditions.append(AudioRecording.node_id == node_id)
     return (
-        await AudioRecording.find(AudioRecording.patient_id == patient_id)
+        await AudioRecording.find(*conditions)
         .sort(-AudioRecording.start_ts)
         .skip(skip)
         .limit(limit)
