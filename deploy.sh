@@ -20,6 +20,7 @@
 #   NILO_INFRA_HOST=192.168.1.10 ./deploy.sh  # no aplica al stack completo (usa red Docker);
 #     para API en VM: config.yaml + docker-compose.api-only.yml
 #   NILO_SYSTEMD=0 ./deploy.sh         # no instalar servicio systemd al desplegar
+#   ./deploy.sh --ghcr                 # API desde ghcr.io (pull, sin build local)
 #
 set -euo pipefail
 
@@ -40,6 +41,8 @@ MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-9003}"
 NILO_SYSTEMD="${NILO_SYSTEMD:-1}"
 SKIP_SYSTEMD=0
 NILO_BACKUP="${NILO_BACKUP:-1}"
+USE_GHCR=0
+NILO_API_IMAGE="${NILO_API_IMAGE:-ghcr.io/neovisionsai/nilo-backend:latest}"
 HEALTH_URL="http://localhost:${API_HOST_PORT}/health"
 HEALTH_HTTPS_URL="https://localhost:${API_HTTPS_PORT}/health"
 HEALTH_RETRIES="${HEALTH_RETRIES:-90}"
@@ -77,6 +80,9 @@ docker_cmd() {
 
 docker_compose() {
   local args=(compose --env-file "$CREDENTIALS_FILE" -f "$COMPOSE_FILE")
+  if [[ "$USE_GHCR" == "1" ]]; then
+    args+=(-f "$ROOT_DIR/docker-compose.ghcr.yml")
+  fi
   if [[ "$NILO_HTTPS" == "1" ]]; then
     args+=(--profile https)
   fi
@@ -221,6 +227,27 @@ is_credential_pull_error() {
 compose_up_with_retry() {
   local log
   log="$(mktemp)"
+
+  if [[ "$USE_GHCR" == "1" ]]; then
+    info "Descargando imagen API: ${NILO_API_IMAGE}"
+    if ! docker_compose pull api >"$log" 2>&1; then
+      cat "$log" >&2
+      rm -f "$log"
+      error "Fallo al hacer pull de la imagen. ¿docker login ghcr.io? Ver docs/07.ghcr_deploy.md"
+      return 1
+    fi
+    cat "$log"
+    rm -f "$log"
+    log="$(mktemp)"
+    if docker_compose up -d >"$log" 2>&1; then
+      cat "$log"
+      rm -f "$log"
+      return 0
+    fi
+    cat "$log" >&2
+    rm -f "$log"
+    return 1
+  fi
 
   prepull_images || true
 
@@ -603,6 +630,11 @@ main() {
       ;;
     --no-systemd)
       SKIP_SYSTEMD=1
+      shift
+      cmd_deploy
+      ;;
+    --ghcr)
+      USE_GHCR=1
       shift
       cmd_deploy
       ;;

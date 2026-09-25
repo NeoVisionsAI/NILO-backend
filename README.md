@@ -159,6 +159,7 @@ Puedes levantar solo las dependencias con: `docker compose up mongo minio`.
 | Arranque tras apagón / systemd | [`docs/05.vm_systemd_service.md`](docs/05.vm_systemd_service.md) |
 | Health, disco, backups | [`docs/06.operations.md`](docs/06.operations.md) |
 | Ingestión nilo-node / sesiones | [`docs/02.nilo_node_ingestion_spec.md`](docs/02.nilo_node_ingestion_spec.md), [`docs/04.monitoring_sessions.md`](docs/04.monitoring_sessions.md) |
+| Imagen Docker en GHCR (CI + pull) | [`docs/07.ghcr_deploy.md`](docs/07.ghcr_deploy.md) |
 | Admin frontend | [`docs/03.root_admin_frontend_spec.md`](docs/03.root_admin_frontend_spec.md) |
 
 ### Health
@@ -184,6 +185,17 @@ Cada noche (timer systemd, configurable):
 Salida en `backups/YYYY-MM-DD/`. Manual: `./scripts/backup-nightly.sh`.
 
 **Importante:** guarda **`credentials.env`** (y `ENCRYPTION_MASTER_KEY`) fuera del servidor; sin ellos no se recuperan datos cifrados ni MinIO SSE.
+
+### Imagen en GitHub Container Registry (GHCR)
+
+Cada push a `main`/`master` publica `ghcr.io/neovisionsai/nilo-backend:latest` (GitHub Actions). En otro servidor:
+
+```bash
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u TU_USUARIO --password-stdin   # si es privado
+./deploy.sh --ghcr
+```
+
+Guía completa: [`docs/07.ghcr_deploy.md`](docs/07.ghcr_deploy.md).
 
 ## Uso rápido de la API
 

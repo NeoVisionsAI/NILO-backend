@@ -1,0 +1,12 @@
+# Override: use pre-built API image from GHCR instead of local `docker build`.
+#
+#   export NILO_API_IMAGE=ghcr.io/neovisionsai/nilo-backend:latest
+#   docker compose --env-file credentials.env \
+#     -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+#
+# Login (private package or rate limits):
+#   echo "$GITHUB_TOKEN" | docker login ghcr.io -u YOUR_GITHUB_USER --password-stdin
+
+services:
+  api:
+    image: ${NILO_API_IMAGE:-ghcr.io/neovisionsai/nilo-backend:latest}
