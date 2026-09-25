@@ -431,7 +431,12 @@ print_summary() {
   if [[ "$NILO_SYSTEMD" != "0" && "$SKIP_SYSTEMD" != "1" ]] && command -v systemctl >/dev/null 2>&1; then
     if systemctl is-enabled nilo-backend.service >/dev/null 2>&1; then
       echo "  Arranque automático: nilo-backend.service (enabled)"
-      echo "    systemctl status nilo-backend | journalctl -u nilo-backend -f"
+      if systemctl is-active nilo-backend.service >/dev/null 2>&1; then
+        echo "    systemd: active (running) — supervisor docker compose"
+      else
+        echo "    systemd: no active; comprueba: systemctl status nilo-backend"
+      fi
+      echo "    docker compose ps  |  journalctl -u nilo-backend -f"
       echo
     fi
   fi
@@ -476,9 +481,9 @@ install_systemd_service() {
 
   local -a install_args=(--full --user "$run_user" --enable-only)
   if [[ "$(id -u)" -eq 0 ]]; then
-    "$install_script" "${install_args[@]}"
+    NILO_HTTPS="${NILO_HTTPS:-1}" "$install_script" "${install_args[@]}"
   elif sudo -n true 2>/dev/null; then
-    sudo "$install_script" "${install_args[@]}"
+    sudo env NILO_HTTPS="${NILO_HTTPS:-1}" "$install_script" "${install_args[@]}"
   else
     warn "Se necesita sudo una vez para instalar el servicio de arranque:"
     warn "  sudo $install_script --full --user $run_user --enable-only"

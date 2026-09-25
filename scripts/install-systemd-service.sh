@@ -94,8 +94,12 @@ case "$MODE" in
 esac
 
 DOCKER_COMPOSE=""
+COMPOSE_EXTRA=""
 if [[ "$MODE" == docker-* ]]; then
   DOCKER_COMPOSE="$(resolve_docker_compose)"
+  if [[ "$COMPOSE_FILE" == "docker-compose.yml" && "${NILO_HTTPS:-1}" == "1" ]]; then
+    COMPOSE_EXTRA="--profile https"
+  fi
 fi
 
 tmp="$(mktemp)"
@@ -104,6 +108,7 @@ sed \
   -e "s|@SERVICE_USER@|${SERVICE_USER}|g" \
   -e "s|@COMPOSE_FILE@|${COMPOSE_FILE}|g" \
   -e "s|@DOCKER_COMPOSE@|${DOCKER_COMPOSE}|g" \
+  -e "s|@COMPOSE_EXTRA@|${COMPOSE_EXTRA}|g" \
   -e "s|@API_PORT@|${API_PORT}|g" \
   "$TEMPLATE" >"$tmp"
 
@@ -113,10 +118,14 @@ rm -f "$tmp"
 systemctl daemon-reload
 systemctl enable "$UNIT_NAME"
 if [[ "$ENABLE_ONLY" == "1" ]]; then
+  if ! systemctl is-active --quiet "$UNIT_NAME" 2>/dev/null; then
+    systemctl start "$UNIT_NAME" || echo "AVISO: No se pudo arrancar $UNIT_NAME; revisa: journalctl -u $UNIT_NAME -n 50" >&2
+  fi
   echo ""
-  echo "Instalado y habilitado al arranque: $UNIT_NAME (modo: $MODE, sin reiniciar stack)"
+  echo "Instalado y habilitado al arranque: $UNIT_NAME (modo: $MODE)"
   echo "  systemctl status $UNIT_NAME"
-  echo "  journalctl -u nilo-backend -f"
+  echo "  docker compose -f $ROOT_DIR/$COMPOSE_FILE ps"
+  echo "  journalctl -u $UNIT_NAME -f"
   exit 0
 fi
 
