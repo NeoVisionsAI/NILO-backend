@@ -5,6 +5,7 @@
 services:
   mongo:
     image: mongo:7
+    pull_policy: if_not_present
     restart: always
     # Root/admin credentials must match MONGODB_ADMIN_* in credentials.env.
     environment:
@@ -19,6 +20,7 @@ services:
 
   minio:
     image: minio/minio:latest
+    pull_policy: if_not_present
     restart: always
     command: server /data --console-address ":9001"
     environment:
@@ -70,6 +72,7 @@ services:
   # HTTPS en desarrollo (cert autofirmado en ./certs). API: https://<host>:8443/api/v1
   caddy:
     image: caddy:2-alpine
+    pull_policy: if_not_present
     restart: unless-stopped
     profiles:
       - https

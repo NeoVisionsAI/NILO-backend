@@ -162,13 +162,33 @@ fix_docker_config_permanent() {
   info "Listo. Vuelve a ejecutar: ./deploy.sh"
 }
 
+pull_image_if_missing() {
+  local ref="$1"
+  if docker_cmd image inspect "$ref" >/dev/null 2>&1; then
+    info "Imagen local OK (sin pull): $ref"
+    return 0
+  fi
+  info "Descargando: $ref"
+  if docker_cmd pull "$ref"; then
+    return 0
+  fi
+  if docker_cmd image inspect "$ref" >/dev/null 2>&1; then
+    warn "Pull falló pero la imagen local existe; se usará: $ref"
+    return 0
+  fi
+  warn "No se pudo descargar $ref (¿sin red o registry bloqueado?)."
+  return 1
+}
+
 prepull_images() {
-  info "Descargando imágenes base..."
-  docker_cmd pull python:3.13-slim
-  docker_cmd pull mongo:7
-  docker_cmd pull minio/minio:latest
+  info "Comprobando imágenes base (solo pull si faltan en local)..."
+  pull_image_if_missing python:3.13-slim || true
+  pull_image_if_missing mongo:7 || true
+  pull_image_if_missing minio/minio:latest \
+    || pull_image_if_missing quay.io/minio/minio:latest \
+    || true
   if [[ "$NILO_HTTPS" == "1" ]]; then
-    docker_cmd pull caddy:2-alpine
+    pull_image_if_missing caddy:2-alpine || true
   fi
 }
 
@@ -203,7 +223,7 @@ compose_up_with_retry() {
 
   prepull_images || true
 
-  if docker_compose up --build -d >"$log" 2>&1; then
+  if docker_compose up --build -d --pull missing >"$log" 2>&1; then
     cat "$log"
     rm -f "$log"
     return 0
@@ -220,7 +240,7 @@ compose_up_with_retry() {
   use_clean_docker_config
   prepull_images || true
 
-  if docker_compose up --build -d >"$log" 2>&1; then
+  if docker_compose up --build -d --pull missing >"$log" 2>&1; then
     cat "$log"
     rm -f "$log"
     return 0
@@ -230,7 +250,7 @@ compose_up_with_retry() {
   if is_credential_pull_error "$log"; then
     warn "BuildKit sigue fallando; probando builder clásico (DOCKER_BUILDKIT=0)..."
     rm -f "$log"
-    DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker_compose up --build -d
+    DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker_compose up --build -d --pull missing
     return $?
   fi
 
@@ -417,6 +437,7 @@ print_summary() {
   fi
   warn "Mongo y MinIO corren en Docker; el usuario 'nilo' se crea/actualiza solo al arrancar la API."
   warn "Si cambias MONGODB_ADMIN_PASSWORD tras el primer despliegue, resetea volúmenes: ./deploy.sh --down -v"
+  warn "Mongo/MinIO usan volúmenes Docker existentes; el deploy no borra datos salvo ./deploy.sh --down -v."
 }
 
 ensure_docker_boot() {
