@@ -223,7 +223,7 @@ compose_up_with_retry() {
 
   prepull_images || true
 
-  if docker_compose up --build -d --pull missing >"$log" 2>&1; then
+  if docker_compose up --build -d >"$log" 2>&1; then
     cat "$log"
     rm -f "$log"
     return 0
@@ -240,7 +240,7 @@ compose_up_with_retry() {
   use_clean_docker_config
   prepull_images || true
 
-  if docker_compose up --build -d --pull missing >"$log" 2>&1; then
+  if docker_compose up --build -d >"$log" 2>&1; then
     cat "$log"
     rm -f "$log"
     return 0
@@ -250,7 +250,7 @@ compose_up_with_retry() {
   if is_credential_pull_error "$log"; then
     warn "BuildKit sigue fallando; probando builder clásico (DOCKER_BUILDKIT=0)..."
     rm -f "$log"
-    DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker_compose up --build -d --pull missing
+    DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker_compose up --build -d
     return $?
   fi
 
