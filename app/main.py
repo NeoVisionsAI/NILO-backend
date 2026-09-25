@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.v1.router import api_router
 from app.core import crypto
@@ -14,6 +15,7 @@ from app.db.mongodb import close_mongo_connection, connect_to_mongo
 from app.db.seed import seed_demo_users
 from app.models.enums import UserRole
 from app.models.user import User
+from app.services.system_health import build_health_report
 from app.storage.minio_client import ensure_bucket
 
 logging.basicConfig(level=logging.INFO)
@@ -89,5 +91,17 @@ app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/health", tags=["health"])
-async def health() -> dict[str, str]:
+async def health() -> JSONResponse:
+    """Liveness + readiness detail (Mongo, MinIO, disk)."""
+    report = await build_health_report()
+    status_code = 503 if not report.ready else 200
+    return JSONResponse(
+        content=report.model_dump(),
+        status_code=status_code,
+    )
+
+
+@app.get("/health/live", tags=["health"])
+async def health_live() -> dict[str, str]:
+    """Process is up (ignores dependencies)."""
     return {"status": "ok", "service": settings.PROJECT_NAME}

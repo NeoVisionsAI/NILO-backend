@@ -152,6 +152,7 @@ activemq-data/
 .envrc
 # NILO secrets: keep the .example, never commit the real one.
 credentials.env
+backups/
 .venv
 env/
 venv/

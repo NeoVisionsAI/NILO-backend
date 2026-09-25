@@ -88,6 +88,36 @@ class Settings(BaseSettings):
     # configured on the MinIO server (see docker-compose.yml).
     MINIO_SSE: bool = True  # config.yaml
 
+    # --- Backups (config.yaml) ---
+    BACKUP_DIR: str = "backups"
+    BACKUP_RETENTION_DAYS: int = 14
+    BACKUP_MINIO_EXCLUDE_CATEGORY: str = "video"
+
+    # --- Disk monitoring (health endpoint) ---
+    DISK_WARN_USED_PERCENT: float = 85.0
+    DISK_CRITICAL_USED_PERCENT: float = 95.0
+    # Comma-separated in env DISK_CHECK_PATHS; YAML list also supported.
+    DISK_CHECK_PATHS: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["/", "/var/minio-data", "/var/mongo-data"]
+    )
+
+    @field_validator("DISK_CHECK_PATHS", mode="before")
+    @classmethod
+    def parse_disk_check_paths(cls, value: object) -> list[str]:
+        if value is None:
+            return ["/"]
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return ["/"]
+            return [p.strip() for p in stripped.split(",") if p.strip()]
+        if isinstance(value, (list, tuple)):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return ["/"]
+
+    def disk_check_paths_list(self) -> list[str]:
+        return list(self.DISK_CHECK_PATHS) if self.DISK_CHECK_PATHS else ["/"]
+
     # --- Security / JWT ---
     JWT_SECRET_KEY: str = "CHANGE_ME_IN_PRODUCTION"  # credentials.env
     JWT_ALGORITHM: str = "HS256"  # config.yaml

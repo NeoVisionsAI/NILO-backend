@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # so credentials.env is intentionally NOT copied into the image.
 COPY config.yaml ./config.yaml
 COPY app ./app
+COPY scripts ./scripts
 
 EXPOSE 8000
 

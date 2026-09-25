@@ -1,0 +1,14 @@
+[Unit]
+Description=NILO nightly backup (MongoDB + MinIO sin video)
+Documentation=file://@INSTALL_DIR@/docs/06.operations.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=@INSTALL_DIR@
+Environment=CREDENTIALS_FILE=@INSTALL_DIR@/credentials.env
+Environment=COMPOSE_FILE=@INSTALL_DIR@/docker-compose.yml
+Environment=BACKUP_DIR=@BACKUP_DIR@
+ExecStart=@INSTALL_DIR@/scripts/backup-nightly.sh
+
+[Install]
+WantedBy=multi-user.target

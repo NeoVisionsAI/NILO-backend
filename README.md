@@ -119,7 +119,7 @@ sudo ./deploy.sh    # recomendado: despliega y habilita nilo-backend.service al 
 # o: ./deploy.sh    # igual, pedirá sudo para systemd si hace falta
 ```
 
-Tras un despliegue correcto, quedan activos: contenedores con `restart: always`, healthcheck en la API, **`systemctl enable docker`** (si aplica) y **`nilo-backend.service`** para volver a levantar el stack tras un reinicio. Desactivar solo systemd: `NILO_SYSTEMD=0 ./deploy.sh`. Detalle: [`docs/05.vm_systemd_service.md`](docs/05.vm_systemd_service.md).
+Tras un despliegue correcto, quedan activos: contenedores con `restart: always`, healthchecks (Mongo, MinIO, API), **`nilo-backend.service`** al arranque y **timer de backups** (~03:15 UTC). Desactivar: `NILO_SYSTEMD=0` y/o `NILO_BACKUP=0` en `./deploy.sh`. Ver [`docs/05.vm_systemd_service.md`](docs/05.vm_systemd_service.md) y [`docs/06.operations.md`](docs/06.operations.md).
 
 > El flag `--env-file credentials.env` hace que los secretos estén disponibles tanto para la sustitución de variables del compose (MinIO) como dentro del contenedor de la API.
 
@@ -152,11 +152,44 @@ uvicorn app.main:app --reload
 
 Puedes levantar solo las dependencias con: `docker compose up mongo minio`.
 
+## Operación 24/7
+
+| Tema | Dónde |
+|------|--------|
+| Arranque tras apagón / systemd | [`docs/05.vm_systemd_service.md`](docs/05.vm_systemd_service.md) |
+| Health, disco, backups | [`docs/06.operations.md`](docs/06.operations.md) |
+| Ingestión nilo-node / sesiones | [`docs/02.nilo_node_ingestion_spec.md`](docs/02.nilo_node_ingestion_spec.md), [`docs/04.monitoring_sessions.md`](docs/04.monitoring_sessions.md) |
+| Admin frontend | [`docs/03.root_admin_frontend_spec.md`](docs/03.root_admin_frontend_spec.md) |
+
+### Health
+
+- **`GET /health`** — Mongo, MinIO, uso de disco por ruta; `status`: `ok` · `degraded` · `critical`; HTTP **503** si Mongo o MinIO no responden (`ready: false`).
+- **`GET /health/live`** — solo comprueba que el proceso API está vivo.
+
+Ejemplo:
+
+```bash
+curl -s http://localhost:8001/health | python3 -m json.tool
+```
+
+Alerta de **disco lleno**: revisa `disk_status` y `disk[].used_percent` (umbrales en `config.yaml`).
+
+### Copias de seguridad
+
+Cada noche (timer systemd, configurable):
+
+- **MongoDB**: dump completo de la BD (`sesiones`, vitales, metadatos de vídeo, etc.).
+- **MinIO**: objetos del día **excepto** la categoría `video` (los chunks pesados no se copian).
+
+Salida en `backups/YYYY-MM-DD/`. Manual: `./scripts/backup-nightly.sh`.
+
+**Importante:** guarda **`credentials.env`** (y `ENCRYPTION_MASTER_KEY`) fuera del servidor; sin ellos no se recuperan datos cifrados ni MinIO SSE.
+
 ## Uso rápido de la API
 
 ```bash
 # Login (usa el email en el campo username)
-curl -X POST http://localhost:8000/api/v1/auth/login \
+curl -X POST http://localhost:8001/api/v1/auth/login \
   -d "username=root@nilo.local&password=changeme"
 
 # Con el token: crear un paciente

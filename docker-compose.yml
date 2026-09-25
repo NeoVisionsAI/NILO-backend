@@ -7,16 +7,23 @@ services:
     image: mongo:7
     pull_policy: if_not_present
     restart: always
-    # Root/admin credentials must match MONGODB_ADMIN_* in credentials.env.
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGODB_ADMIN_USER:-admin}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ADMIN_PASSWORD:-upaelo}
-    # host:container. The host side (27018) only matters if you want to reach
-    # this Mongo from the host; the API talks to it internally on 27017.
     ports:
       - "27018:27017"
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'mongosh "mongodb://$$MONGO_INITDB_ROOT_USERNAME:$$MONGO_INITDB_ROOT_PASSWORD@127.0.0.1:27017/admin" --quiet --eval "db.adminCommand({ ping: 1 }).ok" | grep -q true',
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
 
   minio:
     image: minio/minio:latest
@@ -26,27 +33,29 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
-      # Built-in KMS key enabling SSE-S3 (format: <name>:<base64-32-bytes>).
       MINIO_KMS_SECRET_KEY: nilo-key:${MINIO_KMS_KEY}
     ports:
-      - "9002:9000"   # S3 API      (host 9002 -> container 9000)
-      - "9003:9001"   # Web console  (host 9003 -> container 9001)
+      - "9002:9000"
+      - "9003:9001"
     volumes:
       - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   api:
     build: .
     restart: always
     depends_on:
-      - mongo
-      - minio
-    # Secrets injected into the container.
+      mongo:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     env_file:
       - credentials.env
-    # Container-network overrides (win over config.yaml and credentials.env).
-    # These use the INTERNAL container ports/hostnames, independent of the
-    # host-side port mappings above.
-    # Red interna Docker (no usar NILO_INFRA_HOST aquí). Presigned MinIO: ver config.yaml.
     environment:
       MONGODB_HOST: mongo
       MONGODB_PORT: 27017
@@ -54,22 +63,26 @@ services:
       NILO_INFRA_HOST: ${NILO_INFRA_HOST:-127.0.0.1}
       MINIO_API_PORT: ${MINIO_API_PORT:-9002}
       MINIO_PUBLIC_HOST: ${MINIO_PUBLIC_HOST:-}
-      # Comma-separated browser origins (frontend URL). Override on deploy if IP/hostname changes.
+      BACKUP_DIR: /app/backups
+      DISK_CHECK_PATHS: /,/var/minio-data,/var/mongo-data
       CORS_ORIGINS: ${CORS_ORIGINS:-http://192.168.1.43:8080,https://192.168.1.43:8080,http://localhost:8080,https://localhost:8080,http://127.0.0.1:8080,https://127.0.0.1:8080}
     ports:
       - "0.0.0.0:8001:8000"
+    volumes:
+      - ./backups:/app/backups
+      - minio_data:/var/minio-data:ro
+      - mongo_data:/var/mongo-data:ro
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          'python -c "import urllib.request; urllib.request.urlopen(''http://127.0.0.1:8000/health'', timeout=5)"',
+          'python -c "import json,urllib.request; r=json.load(urllib.request.urlopen(''http://127.0.0.1:8000/health'', timeout=8)); raise SystemExit(0 if r.get(''ready'') else 1)"',
         ]
       interval: 30s
-      timeout: 10s
+      timeout: 15s
       retries: 3
       start_period: 120s
 
-  # HTTPS en desarrollo (cert autofirmado en ./certs). API: https://<host>:8443/api/v1
   caddy:
     image: caddy:2-alpine
     pull_policy: if_not_present
@@ -77,7 +90,8 @@ services:
     profiles:
       - https
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
       - "0.0.0.0:8443:8443"
     volumes:

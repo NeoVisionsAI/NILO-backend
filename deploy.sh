@@ -39,6 +39,7 @@ MINIO_API_PORT="${MINIO_API_PORT:-9002}"
 MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-9003}"
 NILO_SYSTEMD="${NILO_SYSTEMD:-1}"
 SKIP_SYSTEMD=0
+NILO_BACKUP="${NILO_BACKUP:-1}"
 HEALTH_URL="http://localhost:${API_HOST_PORT}/health"
 HEALTH_HTTPS_URL="https://localhost:${API_HTTPS_PORT}/health"
 HEALTH_RETRIES="${HEALTH_RETRIES:-90}"
@@ -352,7 +353,7 @@ wait_for_health() {
   info "Esperando API en ${HEALTH_URL} (máx. $((HEALTH_RETRIES * HEALTH_SLEEP))s)..."
   local i
   for ((i = 1; i <= HEALTH_RETRIES; i++)); do
-    if curl -sf "$HEALTH_URL" >/dev/null 2>&1; then
+    if curl -s "$HEALTH_URL" 2>/dev/null | python3 -c "import sys,json; r=json.load(sys.stdin); sys.exit(0 if r.get('ready') else 1)" 2>/dev/null; then
       info "API lista (${i} intento(s))."
       return 0
     fi
@@ -443,6 +444,9 @@ print_summary() {
   warn "Mongo y MinIO corren en Docker; el usuario 'nilo' se crea/actualiza solo al arrancar la API."
   warn "Si cambias MONGODB_ADMIN_PASSWORD tras el primer despliegue, resetea volúmenes: ./deploy.sh --down -v"
   warn "Mongo/MinIO usan volúmenes Docker existentes; el deploy no borra datos salvo ./deploy.sh --down -v."
+  if [[ "$NILO_BACKUP" != "0" ]]; then
+    echo "  Backups:        ${BACKUP_DIR:-$ROOT_DIR/backups}/ (timer ~03:15 UTC, ver docs/06.operations.md)"
+  fi
 }
 
 ensure_docker_boot() {
@@ -494,6 +498,22 @@ install_systemd_service() {
   info "Servicio nilo-backend.service habilitado al arranque (contenedores: restart always + healthcheck)."
 }
 
+install_backup_timer() {
+  [[ "$NILO_BACKUP" == "0" ]] && return 0
+  local script="$ROOT_DIR/scripts/install-backup-timer.sh"
+  [[ -f "$script" ]] || return 0
+  chmod +x "$script" "$ROOT_DIR/scripts/backup-nightly.sh" 2>/dev/null || true
+  mkdir -p "${BACKUP_DIR:-$ROOT_DIR/backups}"
+  info "Programando copias de seguridad nocturnas (Mongo + MinIO sin video)..."
+  if [[ "$(id -u)" -eq 0 ]]; then
+    BACKUP_DIR="${BACKUP_DIR:-$ROOT_DIR/backups}" "$script"
+  elif sudo -n true 2>/dev/null; then
+    sudo env BACKUP_DIR="${BACKUP_DIR:-$ROOT_DIR/backups}" "$script"
+  else
+    warn "Para backups automáticos: sudo BACKUP_DIR=${BACKUP_DIR:-$ROOT_DIR/backups} $script"
+  fi
+}
+
 cmd_deploy() {
   cd "$ROOT_DIR"
   setup_docker_config
@@ -521,6 +541,7 @@ cmd_deploy() {
   wait_for_health
   wait_for_https_health
   install_systemd_service
+  install_backup_timer
   print_summary
 }
 
