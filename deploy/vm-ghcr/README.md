@@ -37,7 +37,22 @@ sudo systemctl restart nilo-api-vm
 
 ## Obtener el bundle sin clonar el repo
 
-- **Actions → Publish API image (GHCR) → artefacto `nilo-vm-ghcr-deploy`**
-- SCP/USB de la carpeta `deploy/vm-ghcr/`
+**Instalación (una línea, repo público):**
+
+```bash
+mkdir -p ~/nilo-api && cd ~/nilo-api
+curl -fsSL https://raw.githubusercontent.com/NeoVisionsAI/NILO-backend/main/deploy/vm-ghcr/bootstrap.sh | bash
+```
+
+Repo privado: exporta `GITHUB_TOKEN` (contenido `read`) antes del `curl`, o copia la carpeta por SCP.
+
+## Qué actualizar y cuándo
+
+| Cambio en GitHub | En la VM |
+|------------------|----------|
+| **Código de la API** (commit + push → Actions) | Solo `./deploy.sh` (`docker pull` + reinicio). **No** bajes ZIP ni bootstrap. |
+| **Scripts de despliegue** (`deploy.sh`, `compose.yaml`, …) | `./bootstrap.sh` (vuelve a bajar solo esos ficheros). Pasa poco. |
+
+- **Actions → artefacto `nilo-vm-ghcr-deploy`**: alternativa offline al bootstrap; no hace falta en cada push de código.
 
 Documentación: [`docs/07.ghcr_deploy.md`](../../docs/07.ghcr_deploy.md).
