@@ -1,0 +1,32 @@
+# NILO API — solo imagen GHCR (sin build, sin código fuente en el host).
+# Mongo + MinIO en otro host: NILO_INFRA_HOST en credentials.env
+#
+#   cp credentials.env.example credentials.env   # editar secretos + NILO_INFRA_HOST
+#   docker login ghcr.io                         # si el paquete es privado
+#   ./deploy.sh
+#   sudo ./deploy.sh --install-systemd
+
+services:
+  api:
+    image: ${NILO_API_IMAGE:-ghcr.io/neovisionsai/nilo-backend:latest}
+    restart: always
+    env_file:
+      - credentials.env
+    environment:
+      NILO_INFRA_HOST: ${NILO_INFRA_HOST:-127.0.0.1}
+      MONGODB_PORT: ${MONGODB_PORT:-27018}
+      MINIO_API_PORT: ${MINIO_API_PORT:-9002}
+      MINIO_PUBLIC_HOST: ${MINIO_PUBLIC_HOST:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,https://localhost:8080}
+    ports:
+      - "0.0.0.0:8001:8000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'python -c "import urllib.request; urllib.request.urlopen(''http://127.0.0.1:8000/health'', timeout=5)"',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s

@@ -7,6 +7,7 @@
 #   sudo ./scripts/install-systemd-service.sh --full     # Docker stack completo
 #   sudo ./scripts/install-systemd-service.sh --native   # uvicorn en .venv (sin Docker)
 #   sudo ./scripts/install-systemd-service.sh --uninstall
+#   sudo ./scripts/install-systemd-service.sh --ghcr   # API desde GHCR (con api-only o --full)
 #
 set -euo pipefail
 
@@ -17,6 +18,7 @@ MODE="docker-api"
 SERVICE_USER="${SUDO_USER:-${USER:-root}}"
 API_PORT="${API_PORT:-8001}"
 ENABLE_ONLY=0
+USE_GHCR=0
 
 usage() {
   sed -n '2,12p' "$0" | sed 's/^# \?//'
@@ -33,6 +35,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --enable-only)
       ENABLE_ONLY=1
+      shift
+      ;;
+    --ghcr)
+      USE_GHCR=1
       shift
       ;;
     --uninstall)
@@ -99,6 +105,9 @@ if [[ "$MODE" == docker-* ]]; then
   DOCKER_COMPOSE="$(resolve_docker_compose)"
   if [[ "$COMPOSE_FILE" == "docker-compose.yml" && "${NILO_HTTPS:-1}" == "1" ]]; then
     COMPOSE_EXTRA="--profile https"
+  fi
+  if [[ "$USE_GHCR" == "1" ]]; then
+    COMPOSE_EXTRA="${COMPOSE_EXTRA} -f ${ROOT_DIR}/docker-compose.ghcr.yml"
   fi
 fi
 

@@ -56,3 +56,13 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: VM deploy bundle (sin código fuente)
+        run: chmod +x deploy/vm-ghcr/deploy.sh deploy/vm-ghcr/run.sh
+
+      - name: Upload deploy bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nilo-vm-ghcr-deploy
+          path: deploy/vm-ghcr/
+          if-no-files-found: error

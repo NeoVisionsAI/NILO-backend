@@ -1,0 +1,20 @@
+[Unit]
+Description=NILO API (Docker GHCR, VM sin repo)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=@INSTALL_DIR@
+User=@SERVICE_USER@
+Group=docker
+Environment=NILO_API_IMAGE=ghcr.io/neovisionsai/nilo-backend:latest
+ExecStart=@INSTALL_DIR@/deploy.sh --foreground
+ExecStop=/bin/sh -c 'cd @INSTALL_DIR@ && @DOCKER_COMPOSE@ --env-file @INSTALL_DIR@/credentials.env down'
+Restart=always
+RestartSec=15
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

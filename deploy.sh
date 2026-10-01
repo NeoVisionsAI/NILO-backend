@@ -21,6 +21,7 @@
 #     para API en VM: config.yaml + docker-compose.api-only.yml
 #   NILO_SYSTEMD=0 ./deploy.sh         # no instalar servicio systemd al desplegar
 #   ./deploy.sh --ghcr                 # API desde ghcr.io (pull, sin build local)
+#   ./deploy.sh --api-only --ghcr      # VM: solo contenedor API → Mongo/MinIO en el host (NILO_INFRA_HOST)
 #
 set -euo pipefail
 
@@ -42,6 +43,7 @@ NILO_SYSTEMD="${NILO_SYSTEMD:-1}"
 SKIP_SYSTEMD=0
 NILO_BACKUP="${NILO_BACKUP:-1}"
 USE_GHCR=0
+USE_API_ONLY=0
 NILO_API_IMAGE="${NILO_API_IMAGE:-ghcr.io/neovisionsai/nilo-backend:latest}"
 HEALTH_URL="http://localhost:${API_HOST_PORT}/health"
 HEALTH_HTTPS_URL="https://localhost:${API_HTTPS_PORT}/health"
@@ -510,14 +512,26 @@ install_systemd_service() {
   info "Configurando arranque automático (systemd nilo-backend + recuperación)..."
   ensure_docker_boot
 
-  local -a install_args=(--full --user "$run_user" --enable-only)
+  local -a install_args
+  if [[ "$USE_API_ONLY" == "1" ]]; then
+    install_args=(--user "$run_user" --enable-only)
+  else
+    install_args=(--full --user "$run_user" --enable-only)
+  fi
+  if [[ "$USE_GHCR" == "1" ]]; then
+    install_args+=(--ghcr)
+  fi
   if [[ "$(id -u)" -eq 0 ]]; then
     NILO_HTTPS="${NILO_HTTPS:-1}" "$install_script" "${install_args[@]}"
   elif sudo -n true 2>/dev/null; then
     sudo env NILO_HTTPS="${NILO_HTTPS:-1}" "$install_script" "${install_args[@]}"
   else
     warn "Se necesita sudo una vez para instalar el servicio de arranque:"
-    warn "  sudo $install_script --full --user $run_user --enable-only"
+    if [[ "$USE_API_ONLY" == "1" ]]; then
+      warn "  sudo $install_script --user $run_user --enable-only${USE_GHCR:+ --ghcr}"
+    else
+      warn "  sudo $install_script --full --user $run_user --enable-only"
+    fi
     warn "O vuelve a ejecutar: sudo ./deploy.sh"
     return 0
   fi
@@ -547,28 +561,47 @@ cmd_deploy() {
   ensure_docker
   ensure_credentials
 
+  if [[ "$USE_API_ONLY" == "1" ]]; then
+    COMPOSE_FILE="$ROOT_DIR/docker-compose.api-only.yml"
+    local infra="${NILO_INFRA_HOST:-127.0.0.1}"
+    if [[ "$infra" == "127.0.0.1" || "$infra" == "localhost" ]]; then
+      warn "NILO_INFRA_HOST=$infra — en una VM suele ser la IP del host físico (no 127.0.0.1)."
+      warn "  Pon NILO_INFRA_HOST=... en credentials.env o export antes de desplegar."
+    fi
+  fi
+
   if nilo_stack_running; then
     info "NILO ya estaba en ejecución; se reconstruirá/actualizará la API."
   fi
 
   check_ports "$API_HOST_PORT" "API"
-  check_ports "$MONGO_HOST_PORT" "MongoDB"
-  check_ports "$MINIO_API_PORT" "MinIO"
-  check_ports "$MINIO_CONSOLE_PORT" "MinIO consola"
-  if [[ "$NILO_HTTPS" == "1" ]]; then
-    check_ports "$API_HTTPS_PORT" "API HTTPS"
-    ensure_dev_certs
+  if [[ "$USE_API_ONLY" != "1" ]]; then
+    check_ports "$MONGO_HOST_PORT" "MongoDB"
+    check_ports "$MINIO_API_PORT" "MinIO"
+    check_ports "$MINIO_CONSOLE_PORT" "MinIO consola"
+    if [[ "$NILO_HTTPS" == "1" ]]; then
+      check_ports "$API_HTTPS_PORT" "API HTTPS"
+      ensure_dev_certs
+    fi
   fi
 
-  info "Construyendo y levantando servicios (mongo, minio, api${NILO_HTTPS:+ + caddy})..."
-  # URLs presignadas MinIO para clientes en LAN (nilo-node); conexión interna sigue siendo minio:9000.
-  export MINIO_PUBLIC_HOST="${MINIO_PUBLIC_HOST:-$NILO_DEV_HOST}"
+  if [[ "$USE_API_ONLY" == "1" ]]; then
+    info "Levantando solo API (Mongo/MinIO en ${NILO_INFRA_HOST:-127.0.0.1}:${MONGO_HOST_PORT}/${MINIO_API_PORT})..."
+    export MINIO_PUBLIC_HOST="${MINIO_PUBLIC_HOST:-${NILO_INFRA_HOST:-$NILO_DEV_HOST}}"
+  else
+    info "Construyendo y levantando servicios (mongo, minio, api${NILO_HTTPS:+ + caddy})..."
+    export MINIO_PUBLIC_HOST="${MINIO_PUBLIC_HOST:-$NILO_DEV_HOST}"
+  fi
   compose_up_with_retry
 
   wait_for_health
-  wait_for_https_health
+  if [[ "$USE_API_ONLY" != "1" && "$NILO_HTTPS" == "1" ]]; then
+    wait_for_https_health
+  fi
   install_systemd_service
-  install_backup_timer
+  if [[ "$USE_API_ONLY" != "1" ]]; then
+    install_backup_timer
+  fi
   print_summary
 }
 
@@ -602,6 +635,29 @@ cmd_status() {
   docker_compose ps
 }
 
+parse_deploy_options() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --no-systemd)
+        SKIP_SYSTEMD=1
+        shift
+        ;;
+      --ghcr)
+        USE_GHCR=1
+        shift
+        ;;
+      --api-only)
+        USE_API_ONLY=1
+        COMPOSE_FILE="$ROOT_DIR/docker-compose.api-only.yml"
+        shift
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+}
+
 main() {
   case "${1:-}" in
     -h|--help|help)
@@ -610,6 +666,7 @@ main() {
     --install-docker)
       install_docker_debian
       shift || true
+      parse_deploy_options "$@"
       cmd_deploy
       ;;
     --down)
@@ -628,14 +685,8 @@ main() {
     --certs)
       cmd_certs
       ;;
-    --no-systemd)
-      SKIP_SYSTEMD=1
-      shift
-      cmd_deploy
-      ;;
-    --ghcr)
-      USE_GHCR=1
-      shift
+    --no-systemd|--ghcr|--api-only)
+      parse_deploy_options "$@"
       cmd_deploy
       ;;
     "")
