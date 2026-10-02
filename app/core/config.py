@@ -131,16 +131,16 @@ class Settings(BaseSettings):
     ENCRYPTION_MASTER_KEY: str = ""  # credentials.env
 
     # --- Bootstrap root user (created on startup if it does not exist) ---
-    ROOT_EMAIL: str = "root@niloapp.com"  # credentials.env
+    ROOT_EMAIL: str = "root@nilomed.eu"  # credentials.env
     ROOT_PASSWORD: str = "changeme"  # credentials.env
     ROOT_FULL_NAME: str = "NILO Root"  # config.yaml
 
     # --- Seed demo users (created on startup when SEED_USERS is true) ---
     # Handy so you can log in right after `docker compose up`. Disable in prod.
     SEED_USERS: bool = False  # config.yaml
-    SEED_CLINICIAN_EMAIL: str = "clinician@niloapp.com"  # credentials.env
+    SEED_CLINICIAN_EMAIL: str = "clinician@nilomed.eu"  # credentials.env
     SEED_CLINICIAN_PASSWORD: str = "changeme"  # credentials.env
-    SEED_PATIENT_EMAIL: str = "patient@niloapp.com"  # credentials.env
+    SEED_PATIENT_EMAIL: str = "patient@nilomed.eu"  # credentials.env
     SEED_PATIENT_PASSWORD: str = "changeme"  # credentials.env
 
     # --- User photos (config.yaml) ---

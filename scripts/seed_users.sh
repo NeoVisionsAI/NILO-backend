@@ -38,11 +38,11 @@ get_env() {
   if [[ -z "$val" ]]; then echo "$default"; else echo "$val"; fi
 }
 
-ROOT_EMAIL="$(get_env ROOT_EMAIL root@nilo.local)"
+ROOT_EMAIL="$(get_env ROOT_EMAIL root@nilomed.eu)"
 ROOT_PASSWORD="$(get_env ROOT_PASSWORD changeme)"
-CLIN_EMAIL="$(get_env SEED_CLINICIAN_EMAIL clinician@nilo.local)"
+CLIN_EMAIL="$(get_env SEED_CLINICIAN_EMAIL clinician@nilomed.eu)"
 CLIN_PASSWORD="$(get_env SEED_CLINICIAN_PASSWORD changeme)"
-PAT_EMAIL="$(get_env SEED_PATIENT_EMAIL patient@nilo.local)"
+PAT_EMAIL="$(get_env SEED_PATIENT_EMAIL patient@nilomed.eu)"
 PAT_PASSWORD="$(get_env SEED_PATIENT_PASSWORD changeme)"
 
 echo "==> API:      $API_URL"
