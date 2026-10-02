@@ -8,11 +8,12 @@ REPO="${NILO_BOOTSTRAP_REPO:-NeoVisionsAI/NILO-backend}"
 BRANCH="${NILO_BOOTSTRAP_BRANCH:-main}"
 BASE="https://raw.githubusercontent.com/${REPO}/${BRANCH}/deploy/vm-ghcr"
 
-SCRIPT_PATH="${BASH_SOURCE[0]}"
+# curl ... | bash no define BASH_SOURCE; usar PWD o NILO_DEPLOY_DIR
+SCRIPT_PATH="${BASH_SOURCE[0]:-}"
 if [[ -n "$SCRIPT_PATH" && -f "$SCRIPT_PATH" ]]; then
   DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 else
-  DIR="${NILO_DEPLOY_DIR:-$PWD}"
+  DIR="${NILO_DEPLOY_DIR:-$(pwd)}"
 fi
 
 FILES="compose.yaml deploy.sh configure.sh update.sh sync.sh run.sh credentials.env.example nilo-api-vm.service README.md"
