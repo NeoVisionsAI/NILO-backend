@@ -15,7 +15,7 @@ else
   DIR="${NILO_DEPLOY_DIR:-$PWD}"
 fi
 
-FILES="compose.yaml deploy.sh configure.sh update.sh run.sh credentials.env.example nilo-api-vm.service README.md"
+FILES="compose.yaml deploy.sh configure.sh update.sh sync.sh run.sh credentials.env.example nilo-api-vm.service README.md"
 
 curl_fetch() {
   url="$1"
@@ -54,7 +54,7 @@ else
   missing=$((missing + 1))
 fi
 
-chmod +x deploy.sh update.sh run.sh bootstrap.sh 2>/dev/null || true
+chmod +x deploy.sh configure.sh update.sh sync.sh run.sh bootstrap.sh 2>/dev/null || true
 if [[ -f configure.sh ]]; then
   chmod +x configure.sh
 fi
@@ -71,4 +71,4 @@ if [[ "$missing" -gt 0 ]]; then
   exit 1
 fi
 
-echo "==> OK. Codigo API: ./deploy.sh   Scripts: ./bootstrap.sh o ./update.sh"
+echo "==> OK. Tras cada push en GitHub, en la VM: ./update.sh  (o ./sync.sh)"
