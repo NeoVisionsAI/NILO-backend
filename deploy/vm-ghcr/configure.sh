@@ -310,6 +310,17 @@ api_container_running() {
   compose_cmd ps --status running -q api 2>/dev/null | grep -q .
 }
 
+# Ejecuta Python en la imagen GHCR de la API (ya en la VM). No descarga mongo:7 ni minio/mc.
+api_run_python() {
+  local code="$1"
+  if api_container_running; then
+    compose_cmd exec -T api python3 -c "$code"
+  else
+    echo "   (contenedor API parado: prueba efimera con imagen ghcr.io/.../nilo-backend)"
+    compose_cmd run --rm --no-deps api python3 -c "$code"
+  fi
+}
+
 test_ports() {
   local host="${V[NILO_INFRA_HOST]}"
   if [[ -z "$host" ]]; then
@@ -326,28 +337,6 @@ test_ports() {
   fi
 }
 
-test_mongo_via_api_container() {
-  echo "==> MongoDB en host ${V[NILO_INFRA_HOST]}:${V[MONGODB_PORT]} (via contenedor API, misma ruta que la app) ..."
-  compose_cmd exec -T api python3 -c "
-from pymongo import MongoClient
-from app.core.config import settings
-h, p = settings.MONGODB_HOST, settings.MONGODB_PORT
-print(f'   Destino: {h}:{p}')
-c = MongoClient(settings.mongodb_admin_uri, serverSelectionTimeoutMS=8000)
-c.admin.command('ping')
-print('OK: Mongo en el host responde y auth admin valida')
-" 2>&1
-}
-
-test_mongo_via_mongosh_host() {
-  local eu ep uri
-  eu="$(uri_encode "${V[MONGODB_ADMIN_USER]}")"
-  ep="$(uri_encode "${V[MONGODB_ADMIN_PASSWORD]}")"
-  uri="mongodb://${eu}:${ep}@${V[NILO_INFRA_HOST]}:${V[MONGODB_PORT]}/?authSource=admin"
-  echo "==> MongoDB en host ${V[NILO_INFRA_HOST]}:${V[MONGODB_PORT]} (mongosh en esta VM) ..."
-  mongosh "$uri" --quiet --eval 'const r=db.adminCommand({ping:1}); if(r.ok!==1) quit(2); print("OK: Mongo en el host responde y auth admin valida")'
-}
-
 test_mongo_connection() {
   local host="${V[NILO_INFRA_HOST]}"
   if [[ -z "$host" || -z "${V[MONGODB_ADMIN_PASSWORD]}" ]]; then
@@ -358,31 +347,24 @@ test_mongo_connection() {
     echo "Guarda credentials.env (menu 10) antes de probar."
     return 1
   fi
-  if api_container_running; then
-    test_mongo_via_api_container && return 0
-    echo "FAIL: la API no pudo conectar a Mongo en el host."
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "Se necesita Docker y la imagen nilo-backend (./deploy.sh)."
     return 1
   fi
-  if command -v mongosh >/dev/null 2>&1; then
-    test_mongo_via_mongosh_host && return 0
-    echo "FAIL: mongosh no pudo conectar al host."
-    return 1
-  fi
-  echo "AVISO: levanta la API en esta VM (menu 14 ./deploy.sh) y repite."
-  echo "       Usa las mismas credenciales que credentials.env; conecta al HOST, no instala Mongo aqui."
-  echo "       Opcional: sudo apt install -y mongodb-mongosh"
-  return 1
-}
-
-test_minio_via_api_container() {
-  echo "==> MinIO en host ${V[NILO_INFRA_HOST]}:${V[MINIO_API_PORT]} (via contenedor API) ..."
-  compose_cmd exec -T api python3 -c "
-from app.storage.minio_client import get_minio
+  echo "==> MongoDB en el HOST ${host}:${V[MONGODB_PORT]} (URI desde credentials.env, sin imagen mongo:7) ..."
+  api_run_python "
+from pymongo import MongoClient
 from app.core.config import settings
-print(f'   Destino: {settings.MINIO_ENDPOINT}')
-n = len(get_minio().list_buckets())
-print(f'OK: MinIO en el host responde y auth valida ({n} bucket(s))')
-" 2>&1
+h, p = settings.MONGODB_HOST, settings.MONGODB_PORT
+u = settings.MONGODB_ADMIN_USER
+print(f'   Conexion: mongodb://{u}:***@{h}:{p}/?authSource=admin')
+c = MongoClient(settings.mongodb_admin_uri, serverSelectionTimeoutMS=8000)
+c.admin.command('ping')
+print('OK: Mongo en el host responde y auth admin valida')
+" || {
+    echo "FAIL: no se pudo conectar a Mongo en el host."
+    return 1
+  }
 }
 
 test_minio_connection() {
@@ -393,13 +375,13 @@ test_minio_connection() {
     return 1
   fi
   local base="http://${host}:${port}"
-  echo "==> MinIO en el HOST (health HTTP, sin instalar MinIO en la VM) ..."
+  echo "==> MinIO en el HOST ${host}:${port} ..."
   if command -v curl >/dev/null 2>&1; then
     if ! curl -fsS --max-time 5 "${base}/minio/health/live" >/dev/null; then
       echo "FAIL: no responde ${base}/minio/health/live (red/firewall/puerto?)"
       return 1
     fi
-    echo "OK: puerto MinIO accesible en el host (${base})"
+    echo "OK: health HTTP en el host"
   fi
   if [[ -z "${V[MINIO_ACCESS_KEY]}" || -z "${V[MINIO_SECRET_KEY]}" ]]; then
     echo "AVISO: sin claves MinIO no se prueba autenticacion (menu 4)."
@@ -409,19 +391,28 @@ test_minio_connection() {
     echo "Guarda credentials.env (menu 10) antes de probar auth."
     return 1
   fi
-  if api_container_running; then
-    test_minio_via_api_container && return 0
-    echo "FAIL: la API no pudo autenticar en MinIO del host."
-    return 1
+  if ! command -v docker >/dev/null 2>&1; then
+    return 0
   fi
-  echo "AVISO: para probar access/secret levanta la API (menu 14) y repite el menu 12."
-  return 0
+  echo "   Auth S3 con MINIO_ACCESS_KEY / MINIO_SECRET_KEY (sin imagen minio/mc) ..."
+  api_run_python "
+from app.storage.minio_client import get_minio
+from app.core.config import settings
+ep = settings.MINIO_ENDPOINT
+print(f'   Endpoint: {ep} (secure={settings.MINIO_SECURE})')
+n = len(get_minio().list_buckets())
+print(f'OK: MinIO en el host responde y auth valida ({n} bucket(s))')
+" || {
+    echo "FAIL: credenciales MinIO o endpoint incorrectos."
+    return 1
+  }
 }
 
 test_infra_services() {
   echo ""
   echo "=== Prueba Mongo + MinIO en el HOST (desde esta VM) ==="
-  echo "No se descarga ni instala Mongo/MinIO aqui; solo conexion de red al host ${V[NILO_INFRA_HOST]:-(configura menu 2)}."
+  echo "Solo credentials.env + red al host. No se descarga mongo:7 ni minio/mc."
+  echo "Host objetivo: ${V[NILO_INFRA_HOST]:-(configura menu 2)}"
   if [[ -f "$CRED" ]]; then
     echo "Usando: $CRED (si acabas de editar en memoria, guarda con menu 10 y reinicia API si corre)."
   fi
