@@ -31,6 +31,10 @@ declare -A V=(
   [ROOT_EMAIL]="root@niloai.net"
   [ROOT_PASSWORD]=""
   [SEED_USERS]="false"
+  [SEED_CLINICIAN_EMAIL]="clinician@niloai.net"
+  [SEED_CLINICIAN_PASSWORD]=""
+  [SEED_PATIENT_EMAIL]="patient@niloai.net"
+  [SEED_PATIENT_PASSWORD]=""
   [CORS_ORIGINS]=""
   [NILO_API_IMAGE]="ghcr.io/neovisionsai/nilo-backend:latest"
 )
@@ -48,8 +52,16 @@ load_credentials() {
     key="${key%"${key##*[![:space:]]}"}"
     if [[ -v "V[$key]" ]]; then
       V["$key"]="$val"
+    elif [[ "$key" == SEED_* || "$key" == MONGODB_* || "$key" == MINIO_* || "$key" == ROOT_* ]]; then
+      V["$key"]="$val"
     fi
   done <"$f"
+}
+
+uri_encode() {
+  python3 -c "import urllib.parse,sys; print(urllib.parse.quote_plus(sys.argv[1]))" "$1" 2>/dev/null \
+    || jq -rn --arg v "$1" '$v|@uri' 2>/dev/null \
+    || echo "$1"
 }
 
 prompt() {
@@ -139,8 +151,17 @@ ENCRYPTION_MASTER_KEY=${V[ENCRYPTION_MASTER_KEY]}
 ROOT_EMAIL=${V[ROOT_EMAIL]}
 ROOT_PASSWORD=${V[ROOT_PASSWORD]}
 SEED_USERS=${V[SEED_USERS]}
-
 EOF
+  if [[ "${V[SEED_USERS]}" == "true" ]]; then
+    cat >>"$tmp" <<EOF
+
+# --- Usuarios demo (SEED_USERS=true: se crean al arrancar la API si no existen) ---
+SEED_CLINICIAN_EMAIL=${V[SEED_CLINICIAN_EMAIL]}
+SEED_CLINICIAN_PASSWORD=${V[SEED_CLINICIAN_PASSWORD]}
+SEED_PATIENT_EMAIL=${V[SEED_PATIENT_EMAIL]}
+SEED_PATIENT_PASSWORD=${V[SEED_PATIENT_PASSWORD]}
+EOF
+  fi
   if [[ -n "${V[CORS_ORIGINS]}" ]]; then
     echo "CORS_ORIGINS=${V[CORS_ORIGINS]}" >>"$tmp"
   fi
@@ -168,8 +189,12 @@ show_summary() {
   echo "  Mongo db=${V[MONGODB_DB]} app=${V[MONGODB_APP_USER]} / $(mask "${V[MONGODB_APP_PASSWORD]}")"
   echo "  MONGODB_PROVISION=${V[MONGODB_PROVISION]}"
   echo "  MinIO key=$(mask "${V[MINIO_ACCESS_KEY]}") secret=$(mask "${V[MINIO_SECRET_KEY]}")"
-  echo "  ROOT=${V[ROOT_EMAIL]} / $(mask "${V[ROOT_PASSWORD]}")"
+  echo "  ROOT (rol root)=${V[ROOT_EMAIL]} / $(mask "${V[ROOT_PASSWORD]}")"
   echo "  SEED_USERS=${V[SEED_USERS]}"
+  if [[ "${V[SEED_USERS]}" == "true" ]]; then
+    echo "  CLINICIAN=${V[SEED_CLINICIAN_EMAIL]} / $(mask "${V[SEED_CLINICIAN_PASSWORD]}")"
+    echo "  PATIENT=${V[SEED_PATIENT_EMAIL]} / $(mask "${V[SEED_PATIENT_PASSWORD]}")"
+  fi
   echo "  Imagen: ${V[NILO_API_IMAGE]}"
   echo ""
 }
@@ -226,10 +251,30 @@ section_security() {
 
 section_root() {
   echo ""
-  echo "--- Usuario root de la API (bootstrap) ---"
-  prompt ROOT_EMAIL "Email root" "${V[ROOT_EMAIL]}"
-  prompt ROOT_PASSWORD "Contraseña root API" "" 1
-  prompt_yes_no SEED_USERS "¿Crear usuarios demo al arrancar?" "${V[SEED_USERS]}"
+  echo "--- Usuario ROOT de la API ---"
+  echo "Se crea al primer arranque si no existe (administrador global)."
+  prompt ROOT_EMAIL "Email (rol: root)" "${V[ROOT_EMAIL]}"
+  prompt ROOT_PASSWORD "Contraseña" "" 1
+}
+
+section_seed_users() {
+  echo ""
+  echo "--- Usuarios demo opcionales (SEED_USERS) ---"
+  echo "La API solo puede auto-crear dos usuarios de prueba con rol fijo:"
+  echo "  - clinician (médico/enfermería demo)"
+  echo "  - patient (paciente demo)"
+  echo "No sustituye usuarios de produccion; desactiva SEED_USERS=false en prod."
+  echo "Mas usuarios/roles: login root y API /api/v1/users o admin."
+  prompt_yes_no SEED_USERS "¿Crear usuarios demo al arrancar la API?" "${V[SEED_USERS]}"
+  if [[ "${V[SEED_USERS]}" != "true" ]]; then
+    return 0
+  fi
+  echo ""
+  prompt SEED_CLINICIAN_EMAIL "Email usuario clinician" "${V[SEED_CLINICIAN_EMAIL]}"
+  prompt SEED_CLINICIAN_PASSWORD "Contraseña clinician" "" 1
+  echo ""
+  prompt SEED_PATIENT_EMAIL "Email usuario patient" "${V[SEED_PATIENT_EMAIL]}"
+  prompt SEED_PATIENT_PASSWORD "Contraseña patient" "" 1
 }
 
 section_advanced() {
@@ -247,6 +292,7 @@ wizard_full() {
   section_minio
   section_security
   section_root
+  section_seed_users
   show_summary
   read -r -p "¿Guardar? (S/n): " ok
   ok="${ok:-S}"
@@ -258,15 +304,100 @@ wizard_full() {
 test_ports() {
   local host="${V[NILO_INFRA_HOST]}"
   if [[ -z "$host" ]]; then
-    echo "Configura NILO_INFRA_HOST primero (menú 2)."
+    echo "Configura NILO_INFRA_HOST primero (menu 2)."
     return 1
   fi
-  echo "Probando TCP desde esta VM hacia $host ..."
+  echo "Probando TCP desde esta VM hacia ${host} ..."
   if command -v nc >/dev/null 2>&1; then
     nc -zv -w 3 "$host" "${V[MONGODB_PORT]}" 2>&1 || true
     nc -zv -w 3 "$host" "${V[MINIO_API_PORT]}" 2>&1 || true
   else
     echo "Instala netcat: sudo apt install -y netcat-openbsd"
+  fi
+}
+
+test_mongo_connection() {
+  local host="${V[NILO_INFRA_HOST]}"
+  local port="${V[MONGODB_PORT]}"
+  local user="${V[MONGODB_ADMIN_USER]}"
+  local pass="${V[MONGODB_ADMIN_PASSWORD]}"
+  if [[ -z "$host" || -z "$user" || -z "$pass" ]]; then
+    echo "Faltan NILO_INFRA_HOST o credenciales admin Mongo (menu 3)."
+    return 1
+  fi
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "Se necesita Docker para probar Mongo con mongosh (contenedor efimero)."
+    return 1
+  fi
+  local eu ep uri
+  eu="$(uri_encode "$user")"
+  ep="$(uri_encode "$pass")"
+  uri="mongodb://${eu}:${ep}@${host}:${port}/?authSource=admin"
+  echo "==> MongoDB: ping con usuario admin ..."
+  if docker run --rm mongo:7 mongosh "$uri" --quiet --eval 'const r=db.adminCommand({ping:1}); print(r.ok===1?"OK: Mongo responde y auth admin valida":"FAIL: "+JSON.stringify(r))'; then
+    return 0
+  fi
+  echo "FAIL: no se pudo conectar o autenticar."
+  return 1
+}
+
+test_minio_connection() {
+  local host="${V[NILO_INFRA_HOST]}"
+  local port="${V[MINIO_API_PORT]}"
+  local access="${V[MINIO_ACCESS_KEY]}"
+  local secret="${V[MINIO_SECRET_KEY]}"
+  if [[ -z "$host" ]]; then
+    echo "Falta NILO_INFRA_HOST."
+    return 1
+  fi
+  local base="http://${host}:${port}"
+  echo "==> MinIO: health sin auth ..."
+  if command -v curl >/dev/null 2>&1; then
+    if curl -fsS --max-time 5 "${base}/minio/health/live" >/dev/null; then
+      echo "OK: endpoint MinIO accesible (${base})"
+    else
+      echo "FAIL: no responde ${base}/minio/health/live"
+      return 1
+    fi
+  fi
+  if [[ -z "$access" || -z "$secret" ]]; then
+    echo "AVISO: sin MINIO_ACCESS_KEY/SECRET no se prueba login S3."
+    return 0
+  fi
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "AVISO: instala Docker para probar credenciales con mc."
+    return 0
+  fi
+  echo "==> MinIO: listar buckets con access key ..."
+  if docker run --rm \
+    -e "MINIO_ENDPOINT=${base}" \
+    -e "MINIO_ACCESS_KEY=${access}" \
+    -e "MINIO_SECRET_KEY=${secret}" \
+    --entrypoint /bin/sh minio/mc:latest -c \
+    'mc alias set nilotest "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" >/dev/null 2>&1 && mc ls nilotest >/dev/null 2>&1'; then
+    echo "OK: credenciales MinIO validas."
+    return 0
+  fi
+  echo "FAIL: credenciales MinIO rechazadas o sin permiso list."
+  return 1
+}
+
+test_infra_services() {
+  echo ""
+  echo "=== Prueba Mongo + MinIO (red y credenciales) ==="
+  local m=0 i=0
+  test_mongo_connection && m=1
+  test_minio_connection && i=1
+  echo ""
+  if [[ "$m" == "1" && "$i" == "1" ]]; then
+    echo "Resumen: Mongo y MinIO OK."
+  elif [[ "$m" == "1" ]]; then
+    echo "Resumen: Mongo OK; revisa MinIO."
+  elif [[ "$i" == "1" ]]; then
+    echo "Resumen: MinIO parcial/OK; revisa Mongo."
+  else
+    echo "Resumen: fallos; revisa IP, puertos, firewall y passwords."
+    return 1
   fi
 }
 
@@ -299,13 +430,15 @@ main_menu() {
     echo "  3) MongoDB"
     echo "  4) MinIO"
     echo "  5) Seguridad (JWT, cifrado)"
-    echo "  6) Usuario root API"
-    echo "  7) Avanzado (CORS, imagen GHCR)"
-    echo "  8) Ver resumen"
-    echo "  9) Guardar credentials.env"
-    echo " 10) Probar puertos al host (nc)"
-    echo " 11) Probar /health (API en :8001)"
-    echo " 12) Ejecutar ./deploy.sh"
+    echo "  6) Usuario ROOT (admin API)"
+    echo "  7) Usuarios demo (clinician + patient)"
+    echo "  8) Avanzado (CORS, imagen GHCR)"
+    echo "  9) Ver resumen"
+    echo " 10) Guardar credentials.env"
+    echo " 11) Probar puertos TCP (nc)"
+    echo " 12) Probar Mongo + MinIO (auth real)"
+    echo " 13) Probar /health (API en :8001)"
+    echo " 14) Ejecutar ./deploy.sh"
     echo "  0) Salir"
     echo "========================================"
     local choice
@@ -317,12 +450,14 @@ main_menu() {
       4) section_minio ;;
       5) section_security ;;
       6) section_root ;;
-      7) section_advanced ;;
-      8) show_summary ;;
-      9) save_credentials ;;
-      10) test_ports ;;
-      11) test_health ;;
-      12) run_deploy ;;
+      7) section_seed_users ;;
+      8) section_advanced ;;
+      9) show_summary ;;
+      10) save_credentials ;;
+      11) test_ports ;;
+      12) test_infra_services ;;
+      13) test_health ;;
+      14) run_deploy ;;
       0|q|Q) echo "Chao."; exit 0 ;;
       *) echo "Opción no válida." ;;
     esac
