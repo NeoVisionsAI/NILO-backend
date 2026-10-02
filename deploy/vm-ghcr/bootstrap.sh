@@ -1,39 +1,25 @@
 #!/usr/bin/env bash
-# Descarga solo los ficheros de despliegue (sin clonar el repo ni bajar app/).
-#
-#   mkdir -p ~/nilo-api && cd ~/nilo-api
-#   curl -fsSL https://raw.githubusercontent.com/NeoVisionsAI/NILO-backend/main/deploy/vm-ghcr/bootstrap.sh | bash
-#
-# Actualizar scripts en la misma carpeta (no borra credentials.env):
-#   ./bootstrap.sh
-#
-# Actualizar imagen API tras push de codigo:
-#   ./deploy.sh
+# Baja scripts de deploy/vm-ghcr desde GitHub main. No borra credentials.env.
+# Uso: cd ~/nilo-api && ./bootstrap.sh
+# Codigo API: solo ./deploy.sh (no hace falta bootstrap cada vez).
 set -euo pipefail
 
 REPO="${NILO_BOOTSTRAP_REPO:-NeoVisionsAI/NILO-backend}"
 BRANCH="${NILO_BOOTSTRAP_BRANCH:-main}"
 BASE="https://raw.githubusercontent.com/${REPO}/${BRANCH}/deploy/vm-ghcr"
-DIR="${NILO_DEPLOY_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd || echo "$PWD")}"
 
-if [[ ! -f "$DIR/bootstrap.sh" && -z "${BASH_SOURCE:-}" ]]; then
-  DIR="$PWD"
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+if [[ -n "$SCRIPT_PATH" && -f "$SCRIPT_PATH" ]]; then
+  DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+else
+  DIR="${NILO_DEPLOY_DIR:-$PWD}"
 fi
 
-# bootstrap.sh al final, como .new + bash -n, para no romper el script en ejecucion
-FILES=(
-  compose.yaml
-  deploy.sh
-  configure.sh
-  update.sh
-  run.sh
-  credentials.env.example
-  nilo-api-vm.service
-  README.md
-)
+FILES="compose.yaml deploy.sh configure.sh update.sh run.sh credentials.env.example nilo-api-vm.service README.md"
 
 curl_fetch() {
-  local url="$1" out="$2"
+  url="$1"
+  out="$2"
   if [[ -n "${GITHUB_TOKEN:-}" ]]; then
     curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" "$url" -o "$out"
   else
@@ -43,47 +29,46 @@ curl_fetch() {
 
 mkdir -p "$DIR"
 cd "$DIR"
-echo "==> Descargando deploy/vm-ghcr desde ${REPO}@${BRANCH} -> $DIR"
+
+echo "==> Descargando deploy/vm-ghcr desde ${REPO}@${BRANCH} hacia ${DIR}"
 
 missing=0
-for f in "${FILES[@]}"; do
+for f in $FILES; do
   if ! curl_fetch "${BASE}/${f}" "$f"; then
-    echo "AVISO: no se pudo descargar $f (404 en GitHub?)" >&2
+    echo "AVISO: fallo al descargar ${f}" >&2
     missing=$((missing + 1))
   fi
 done
 
-bootstrap_new="bootstrap.sh.new"
-if curl_fetch "${BASE}/bootstrap.sh" "$bootstrap_new"; then
-  if bash -n "$bootstrap_new"; then
-    chmod +x "$bootstrap_new"
-    mv "$bootstrap_new" bootstrap.sh
+if curl_fetch "${BASE}/bootstrap.sh" "bootstrap.sh.new"; then
+  if bash -n "bootstrap.sh.new"; then
+    chmod +x "bootstrap.sh.new"
+    mv "bootstrap.sh.new" "bootstrap.sh"
   else
-    echo "AVISO: bootstrap descargado invalido; se conserva el local." >&2
-    rm -f "$bootstrap_new"
+    echo "AVISO: bootstrap remoto invalido; se mantiene el local." >&2
+    rm -f "bootstrap.sh.new"
+    missing=$((missing + 1))
   fi
 else
-  echo "AVISO: no se pudo actualizar bootstrap.sh" >&2
+  echo "AVISO: no se pudo descargar bootstrap.sh" >&2
   missing=$((missing + 1))
 fi
 
 chmod +x deploy.sh update.sh run.sh bootstrap.sh 2>/dev/null || true
-[[ -f configure.sh ]] && chmod +x configure.sh
+if [[ -f configure.sh ]]; then
+  chmod +x configure.sh
+fi
 
 if [[ ! -f credentials.env ]]; then
   cp credentials.env.example credentials.env
-  echo "==> Creado credentials.env - editalo antes de ./deploy.sh"
+  echo "==> Creado credentials.env"
 else
-  echo "==> credentials.env ya existe (no sobrescrito)"
+  echo "==> credentials.env sin cambios"
 fi
 
 if [[ "$missing" -gt 0 ]]; then
-  echo "==> Completado con avisos. Faltan ficheros en ${REPO}@${BRANCH} - haz push a main o copia por scp." >&2
+  echo "==> Terminado con errores. Revisa que main tenga deploy/vm-ghcr en GitHub." >&2
   exit 1
 fi
 
-echo "==> Listo. Tras cada push en GitHub:"
-echo "    ./update.sh image     # solo nueva API (lo habitual)"
-echo "    ./update.sh scripts   # solo scripts de despliegue"
-echo "    ./update.sh           # ambos"
-echo "    ./configure.sh        # credenciales (1a vez o cambios)"
+echo "==> OK. Codigo API: ./deploy.sh   Scripts: ./bootstrap.sh o ./update.sh"
