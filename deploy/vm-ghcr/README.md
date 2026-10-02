@@ -6,6 +6,7 @@ Solo **Docker**, estos ficheros y **`credentials.env`**. No hace falta `git clon
 |---------|-----|
 | `compose.yaml` | Imagen GHCR + puertos |
 | `credentials.env` | Secretos (crear desde `.example`) |
+| `configure.sh` | Menú interactivo → `credentials.env` |
 | `deploy.sh` | Pull + arranque; systemd al boot |
 
 La app va **dentro de la imagen** `ghcr.io/neovisionsai/nilo-backend`.
@@ -15,12 +16,12 @@ La app va **dentro de la imagen** `ghcr.io/neovisionsai/nilo-backend`.
 ## Primera vez
 
 ```bash
-cp credentials.env.example credentials.env
-# Editar: NILO_INFRA_HOST, Mongo, MinIO, JWT, ENCRYPTION_MASTER_KEY…
+chmod +x configure.sh deploy.sh
+./configure.sh         # menú: credenciales + probar puertos/health
+# o: cp credentials.env.example credentials.env && nano credentials.env
 
 docker login ghcr.io   # paquete privado
 
-chmod +x deploy.sh
 ./deploy.sh
 sudo ./deploy.sh --install-systemd
 ```

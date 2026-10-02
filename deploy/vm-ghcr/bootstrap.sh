@@ -23,7 +23,7 @@ if [[ ! -f "$DIR/bootstrap.sh" && -z "${BASH_SOURCE:-}" ]]; then
   DIR="$PWD"
 fi
 
-FILES=(compose.yaml deploy.sh run.sh credentials.env.example nilo-api-vm.service README.md bootstrap.sh)
+FILES=(compose.yaml deploy.sh configure.sh run.sh credentials.env.example nilo-api-vm.service README.md bootstrap.sh)
 
 curl_fetch() {
   local url="$1" out="$2"
@@ -40,11 +40,11 @@ echo "==> Descargando deploy/vm-ghcr desde ${REPO}@${BRANCH} → $DIR"
 for f in "${FILES[@]}"; do
   curl_fetch "${BASE}/${f}" "$f"
 done
-chmod +x deploy.sh run.sh bootstrap.sh 2>/dev/null || true
+chmod +x deploy.sh configure.sh run.sh bootstrap.sh 2>/dev/null || true
 if [[ ! -f credentials.env ]]; then
   cp credentials.env.example credentials.env
   echo "==> Creado credentials.env — edítalo antes de ./deploy.sh"
 else
   echo "==> credentials.env ya existe (no sobrescrito)"
 fi
-echo "==> Listo. Siguiente: editar credentials.env, docker login ghcr.io, ./deploy.sh"
+echo "==> Listo. Siguiente: ./configure.sh  (o editar credentials.env), docker login ghcr.io, ./deploy.sh"
