@@ -1,59 +1,63 @@
-# Despliegue VM sin código fuente
+# Despliegue VM sin codigo fuente
 
-Solo **Docker**, estos ficheros y **`credentials.env`**. No hace falta `git clone`.
+Solo Docker, scripts en esta carpeta y credentials.env. No hace falta git clone del backend.
 
-| Fichero | Uso |
-|---------|-----|
-| `compose.yaml` | Imagen GHCR + puertos |
-| `credentials.env` | Secretos (crear desde `.example`) |
-| `configure.sh` | Menú interactivo → `credentials.env` |
-| `deploy.sh` | Pull + arranque; systemd al boot |
+La aplicacion va dentro de la imagen ghcr.io/neovisionsai/nilo-backend.
 
-La app va **dentro de la imagen** `ghcr.io/neovisionsai/nilo-backend`.
-
-> **`deploy.sh` corre en la VM (host), no dentro del contenedor.** El contenedor solo ejecuta la API (uvicorn). Al boot, systemd lanza `deploy.sh`, que hace `pull` y `docker compose up`.
-
-## Primera vez
-
-```bash
-chmod +x configure.sh deploy.sh
-./configure.sh         # menú: credenciales + probar puertos/health
-# o: cp credentials.env.example credentials.env && nano credentials.env
-
-docker login ghcr.io   # paquete privado
-
-./deploy.sh
-sudo ./deploy.sh --install-systemd
-```
-
-Tras `--install-systemd`, cada **reinicio de la VM**: pull de la imagen (si hay red/login) y contenedor arriba.
-
-## Actualizar versión
-
-```bash
-./deploy.sh
-# o reiniciar servicio:
-sudo systemctl restart nilo-api-vm
-```
-
-## Obtener el bundle sin clonar el repo
-
-**Instalación (una línea, repo público):**
+## Primera vez en la VM
 
 ```bash
 mkdir -p ~/nilo-api && cd ~/nilo-api
 curl -fsSL https://raw.githubusercontent.com/NeoVisionsAI/NILO-backend/main/deploy/vm-ghcr/bootstrap.sh | bash
+
+chmod +x configure.sh update.sh deploy.sh
+./configure.sh
+docker login ghcr.io   # si el paquete GHCR es privado
+./deploy.sh
 ```
 
-Repo privado: exporta `GITHUB_TOKEN` (contenido `read`) antes del `curl`, o copia la carpeta por SCP.
+Opcional arranque al boot: sudo ./deploy.sh --install-systemd
 
-## Qué actualizar y cuándo
+## Tras commit + push (sin subir ficheros a mano)
 
-| Cambio en GitHub | En la VM |
-|------------------|----------|
-| **Código de la API** (commit + push → Actions) | Solo `./deploy.sh` (`docker pull` + reinicio). **No** bajes ZIP ni bootstrap. |
-| **Scripts de despliegue** (`deploy.sh`, `compose.yaml`, …) | `./bootstrap.sh` (vuelve a bajar solo esos ficheros). Pasa poco. |
+En GitHub: Actions en verde (imagen nueva).
 
-- **Actions → artefacto `nilo-vm-ghcr-deploy`**: alternativa offline al bootstrap; no hace falta en cada push de código.
+En la VM, desde ~/nilo-api:
 
-Documentación: [`docs/07.ghcr_deploy.md`](../../docs/07.ghcr_deploy.md).
+```bash
+./update.sh image
+```
+
+Eso hace docker pull y reinicia el contenedor. Es lo habitual cuando solo cambia codigo de la API.
+
+Si en el repo cambiaste scripts de despliegue (deploy.sh, configure.sh, compose.yaml):
+
+```bash
+./update.sh scripts
+```
+
+Ambos (scripts + imagen):
+
+```bash
+./update.sh
+```
+
+Equivalente manual:
+
+- ./bootstrap.sh  = pull de scripts desde main (raw GitHub)
+- ./deploy.sh     = pull de imagen GHCR
+
+credentials.env no se sobrescribe con bootstrap.
+
+## Recuperar bootstrap roto (una linea, sin scp)
+
+```bash
+cd ~/nilo-api
+curl -fsSL https://raw.githubusercontent.com/NeoVisionsAI/NILO-backend/main/deploy/vm-ghcr/bootstrap.sh -o bootstrap.sh
+chmod +x bootstrap.sh
+./bootstrap.sh
+```
+
+Requiere que deploy/vm-ghcr este en la rama main del repo remoto.
+
+Documentacion: docs/07.ghcr_deploy.md

@@ -58,7 +58,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: VM deploy bundle (sin código fuente)
-        run: chmod +x deploy/vm-ghcr/deploy.sh deploy/vm-ghcr/configure.sh deploy/vm-ghcr/run.sh deploy/vm-ghcr/bootstrap.sh
+        run: chmod +x deploy/vm-ghcr/*.sh
 
       - name: Upload deploy bundle artifact
         uses: actions/upload-artifact@v4

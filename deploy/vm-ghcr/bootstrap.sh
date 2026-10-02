@@ -25,6 +25,7 @@ FILES=(
   compose.yaml
   deploy.sh
   configure.sh
+  update.sh
   run.sh
   credentials.env.example
   nilo-api-vm.service
@@ -66,7 +67,7 @@ else
   missing=$((missing + 1))
 fi
 
-chmod +x deploy.sh run.sh bootstrap.sh 2>/dev/null || true
+chmod +x deploy.sh update.sh run.sh bootstrap.sh 2>/dev/null || true
 [[ -f configure.sh ]] && chmod +x configure.sh
 
 if [[ ! -f credentials.env ]]; then
@@ -81,4 +82,8 @@ if [[ "$missing" -gt 0 ]]; then
   exit 1
 fi
 
-echo "==> Listo. Siguiente: ./configure.sh, docker login ghcr.io si hace falta, ./deploy.sh"
+echo "==> Listo. Tras cada push en GitHub:"
+echo "    ./update.sh image     # solo nueva API (lo habitual)"
+echo "    ./update.sh scripts   # solo scripts de despliegue"
+echo "    ./update.sh           # ambos"
+echo "    ./configure.sh        # credenciales (1a vez o cambios)"
