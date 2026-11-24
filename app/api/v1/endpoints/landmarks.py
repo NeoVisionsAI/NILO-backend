@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 
 from app.api.deps import get_current_user, require_staff
 from app.core.config import settings
-from app.core.upload_body import read_proxy_upload_bytes
+from app.core.upload_body import read_landmarks_upload_bytes
 from app.models.base import utcnow
 from app.models.enums import LandmarkSource, ProcessingStatus
 from app.models.landmarks import BodyLandmarks
@@ -36,12 +36,10 @@ class _LandmarksUploadResponse(LandmarksOut):
     status_code=status.HTTP_201_CREATED,
     summary="Upload landmarks file via API (multipart)",
     description=(
-        "Multipart: form fields + `file` (JSON or **gzip** `.json.gz`). "
-        "Stored in MinIO as JSON. Max payload after decompress: "
-        f"{64} MiB (`MAX_PROXY_UPLOAD_BYTES`). "
-        "Front: schema `nilo-mediapipe-face-capture-v1`, `landmark_encoding: flat-xyz`; "
-        "gzip recommended for 1–2 min captures (~478 points/frame). "
-        "nginx: `client_max_body_size 64m` on `/api/`."
+        "Multipart: form fields + `file` (JSON, gzip `.json.gz`, or **zip** with one `.json`). "
+        "API extracts JSON and stores plain JSON in MinIO. Max after decompress: 64 MiB. "
+        "Front: `schema: nilo-mediapipe-face-capture-v1`, `landmark_encoding: flat-xyz`. "
+        "Preferred: zip with `landmarks.json` inside. nginx: `client_max_body_size 64m`."
     ),
 )
 async def upload_landmarks_body(
@@ -50,7 +48,7 @@ async def upload_landmarks_body(
     start_ts: Annotated[datetime, Form(description="ISO-8601")],
     file: UploadFile = File(
         ...,
-        description="JSON landmarks or gzip-compressed JSON (.json.gz)",
+        description="JSON, gzip (.json.gz), or zip containing one landmarks .json",
     ),
     source: LandmarkSource = Form(LandmarkSource.MEDIAPIPE),
     node_id: Annotated[PydanticObjectId | None, Form()] = None,
@@ -69,9 +67,9 @@ async def upload_landmarks_body(
         patient_id=patient_id,
         node_id=node_id,
     )
-    data = await read_proxy_upload_bytes(file)
+    data = await read_landmarks_upload_bytes(file)
     store_ext = "json"
-    if file_extension and file_extension.lower() not in ("gz", "gzip"):
+    if file_extension and file_extension.lower() not in ("gz", "gzip", "zip"):
         store_ext = file_extension.lstrip(".")
     filename = f"landmarks_{int(start_ts.timestamp())}_{source.value}.{store_ext}"
     object_key = minio_client.build_object_key(
@@ -81,7 +79,7 @@ async def upload_landmarks_body(
         ts=start_ts,
         subpath=str(session_id),
     )
-    content_type = file.content_type or "application/json"
+    content_type = "application/json"
     size = minio_client.put_object_bytes(object_key, data, content_type=content_type)
     doc = BodyLandmarks(
         session_id=session_id,
