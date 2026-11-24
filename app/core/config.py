@@ -107,6 +107,20 @@ class Settings(BaseSettings):
         default_factory=lambda: ["/", "/var/minio-data", "/var/mongo-data"]
     )
 
+    @field_validator("MINIO_PUBLIC_SECURE", mode="before")
+    @classmethod
+    def empty_public_secure(cls, value: object) -> bool | None:
+        if value is None or value == "":
+            return None
+        return value  # type: ignore[return-value]
+
+    @field_validator("MINIO_PUBLIC_PORT", mode="before")
+    @classmethod
+    def empty_public_port(cls, value: object) -> int | None:
+        if value is None or value == "":
+            return None
+        return value  # type: ignore[return-value]
+
     @field_validator("DISK_CHECK_PATHS", mode="before")
     @classmethod
     def parse_disk_check_paths(cls, value: object) -> list[str]:
