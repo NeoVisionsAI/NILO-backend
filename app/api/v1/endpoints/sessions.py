@@ -25,12 +25,14 @@ from app.schemas.monitoring_session import (
     SegmentUploadResponse,
     SessionOverviewOut,
 )
+from app.schemas.session_media import SessionMediaAccessOut
 from app.services.monitoring_session import (
     count_session_documents,
     require_active_ingestion,
     require_node,
     require_session,
 )
+from app.services.session_media_access import build_session_media_access
 from app.storage import minio_client
 from app.api.v1.endpoints import session_text_notes
 
@@ -117,6 +119,21 @@ async def patch_session(
         session.updated_at = utcnow()
         await session.save()
     return session
+
+
+@router.get("/{session_id}/media-access", response_model=SessionMediaAccessOut)
+async def get_session_media_access(
+    session_id: PydanticObjectId,
+    expires_in: int | None = None,
+    _: User = Depends(get_current_user),
+) -> SessionMediaAccessOut:
+    """Presigned GET URLs for all uploaded media in the session (renew on open).
+
+    Objects in MinIO do not expire; links do. Query ``expires_in`` (seconds, max 7d)
+    defaults to ``MINIO_DOWNLOAD_EXPIRY`` (24 h).
+    """
+    await require_session(session_id)
+    return await build_session_media_access(session_id, expiry_seconds=expires_in)
 
 
 @router.get("/{session_id}/overview", response_model=SessionOverviewOut)
@@ -257,5 +274,5 @@ async def download_video_segment(
         bucket=segment.bucket,
         object_key=segment.object_key,
         download_url=url,
-        expires_in=settings.MINIO_PRESIGN_EXPIRY,
+        expires_in=settings.MINIO_DOWNLOAD_EXPIRY,
     )

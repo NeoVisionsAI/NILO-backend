@@ -88,8 +88,12 @@ class Settings(BaseSettings):
     # HTTPS en URLs presignadas (navegador / mixed content). Si no se define, usa MINIO_SECURE.
     MINIO_PUBLIC_SECURE: bool | None = None
     MINIO_BUCKET: str = "nilo-data"  # config.yaml
-    # How long presigned URLs stay valid, in seconds.
+    # How long presigned PUT URLs stay valid, in seconds.
     MINIO_PRESIGN_EXPIRY: int = 3600  # config.yaml
+    # Presigned GET (reproducción / revisión clínica). Se puede renovar al abrir sesión.
+    MINIO_DOWNLOAD_EXPIRY: int = 86400  # 24 h
+    # Subida directa vía API (multipart) para binarios pequeños.
+    MAX_PROXY_UPLOAD_BYTES: int = 32 * 1024 * 1024  # 32 MiB
     # Enable server-side encryption (SSE-S3) as bucket default. Requires a KMS
     # configured on the MinIO server (see docker-compose.yml).
     MINIO_SSE: bool = True  # config.yaml

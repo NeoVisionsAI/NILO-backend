@@ -8,6 +8,7 @@ object-key conventions.
 
 import logging
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
 
 from minio import Minio
 from minio.sseconfig import Rule, SSEConfig
@@ -119,10 +120,32 @@ def presigned_get_url(
 ) -> str:
     """Return a presigned URL to GET (download) an object."""
     bucket = bucket or settings.MINIO_BUCKET
-    expiry = expiry_seconds or settings.MINIO_PRESIGN_EXPIRY
+    expiry = expiry_seconds or settings.MINIO_DOWNLOAD_EXPIRY
     return get_presign_minio().presigned_get_object(
         bucket, object_key, expires=timedelta(seconds=expiry)
     )
+
+
+def put_object_bytes(
+    object_key: str,
+    data: bytes,
+    *,
+    bucket: str | None = None,
+    content_type: str | None = None,
+) -> int:
+    """Server-side upload (API → MinIO), same credentials as mc."""
+    bucket = bucket or settings.MINIO_BUCKET
+    ensure_bucket()
+    client = get_minio()
+    length = len(data)
+    client.put_object(
+        bucket,
+        object_key,
+        BytesIO(data),
+        length,
+        content_type=content_type or "application/octet-stream",
+    )
+    return length
 
 
 def object_exists(object_key: str, bucket: str | None = None) -> bool:

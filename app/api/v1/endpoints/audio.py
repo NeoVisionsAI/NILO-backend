@@ -4,14 +4,17 @@ Raw audio is uploaded to MinIO via presigned URL. Voice notes can later be
 transcribed to text (speech-to-text) while the original audio is preserved.
 """
 
+from datetime import datetime
+from typing import Annotated
+
 from beanie import PydanticObjectId
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
 from app.api.deps import get_current_user, require_staff
 from app.core.config import settings
 from app.models.audio import AudioRecording
 from app.models.base import utcnow
-from app.models.enums import ProcessingStatus, TranscriptionStatus
+from app.models.enums import AudioKind, ProcessingStatus, TranscriptionStatus
 from app.models.user import User
 from app.schemas.audio import (
     AudioOut,
@@ -24,6 +27,65 @@ from app.services.monitoring_session import require_active_ingestion
 from app.storage import minio_client
 
 router = APIRouter()
+
+
+@router.post(
+    "/upload", response_model=AudioOut, status_code=status.HTTP_201_CREATED
+)
+async def upload_audio_body(
+    session_id: Annotated[PydanticObjectId, Form()],
+    patient_id: Annotated[PydanticObjectId, Form()],
+    start_ts: Annotated[datetime, Form()],
+    file: UploadFile = File(...),
+    kind: AudioKind = Form(AudioKind.VOICE_NOTE),
+    node_id: Annotated[PydanticObjectId | None, Form()] = None,
+    end_ts: Annotated[datetime | None, Form()] = None,
+    duration_seconds: Annotated[float | None, Form()] = None,
+    file_extension: Annotated[str, Form()] = "webm",
+    format: Annotated[str | None, Form()] = None,
+    current_user: User = Depends(require_staff),
+) -> AudioRecording:
+    """Multipart upload: API writes audio to MinIO."""
+    await require_active_ingestion(
+        session_id=session_id,
+        patient_id=patient_id,
+        node_id=node_id,
+    )
+    data = await file.read()
+    if len(data) > settings.MAX_PROXY_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File too large for API upload",
+        )
+    filename = f"{int(start_ts.timestamp())}_{kind.value}.{file_extension}"
+    object_key = minio_client.build_object_key(
+        patient_id=str(patient_id),
+        category="audio",
+        filename=filename,
+        ts=start_ts,
+        subpath=str(session_id),
+    )
+    content_type = file.content_type or "application/octet-stream"
+    size = minio_client.put_object_bytes(object_key, data, content_type=content_type)
+    audio = AudioRecording(
+        session_id=session_id,
+        patient_id=patient_id,
+        node_id=node_id,
+        kind=kind,
+        start_ts=start_ts,
+        end_ts=end_ts,
+        duration_seconds=duration_seconds,
+        bucket=settings.MINIO_BUCKET,
+        object_key=object_key,
+        size_bytes=size,
+        format=format,
+        status=ProcessingStatus.UPLOADED,
+        recorded_by=current_user.id,
+    )
+    if kind == AudioKind.VOICE_NOTE:
+        audio.transcription_status = TranscriptionStatus.PENDING
+    await audio.insert()
+    return audio
 
 
 @router.post(
@@ -152,5 +214,5 @@ async def download_audio(
         bucket=audio.bucket,
         object_key=audio.object_key,
         download_url=url,
-        expires_in=settings.MINIO_PRESIGN_EXPIRY,
+        expires_in=settings.MINIO_DOWNLOAD_EXPIRY,
     )

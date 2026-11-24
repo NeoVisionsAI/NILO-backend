@@ -4,13 +4,16 @@ Landmark payloads (per-frame keypoints) are uploaded to MinIO via presigned
 URL; this document keeps the metadata and a link to the source video segment.
 """
 
+from datetime import datetime
+from typing import Annotated
+
 from beanie import PydanticObjectId
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
 from app.api.deps import get_current_user, require_staff
 from app.core.config import settings
 from app.models.base import utcnow
-from app.models.enums import ProcessingStatus
+from app.models.enums import LandmarkSource, ProcessingStatus
 from app.models.landmarks import BodyLandmarks
 from app.models.user import User
 from app.schemas.common import PresignedDownload
@@ -24,6 +27,66 @@ router = APIRouter()
 class _LandmarksUploadResponse(LandmarksOut):
     upload_url: str
     upload_expires_in: int
+
+
+@router.post(
+    "/upload",
+    response_model=LandmarksOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_landmarks_body(
+    session_id: Annotated[PydanticObjectId, Form()],
+    patient_id: Annotated[PydanticObjectId, Form()],
+    start_ts: Annotated[datetime, Form(description="ISO-8601")],
+    file: UploadFile = File(...),
+    source: LandmarkSource = Form(LandmarkSource.MEDIAPIPE),
+    node_id: Annotated[PydanticObjectId | None, Form()] = None,
+    video_segment_id: Annotated[PydanticObjectId | None, Form()] = None,
+    model_name: Annotated[str | None, Form()] = None,
+    end_ts: Annotated[datetime | None, Form()] = None,
+    frame_count: Annotated[int | None, Form()] = None,
+    file_extension: Annotated[str, Form()] = "json",
+    _: User = Depends(require_staff),
+) -> BodyLandmarks:
+    """Multipart upload: API writes to MinIO (no browser presigned PUT)."""
+    await require_active_ingestion(
+        session_id=session_id,
+        patient_id=patient_id,
+        node_id=node_id,
+    )
+    data = await file.read()
+    if len(data) > settings.MAX_PROXY_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File too large for API upload",
+        )
+    filename = f"landmarks_{int(start_ts.timestamp())}_{source.value}.{file_extension}"
+    object_key = minio_client.build_object_key(
+        patient_id=str(patient_id),
+        category="landmarks",
+        filename=filename,
+        ts=start_ts,
+        subpath=str(session_id),
+    )
+    content_type = file.content_type or "application/json"
+    size = minio_client.put_object_bytes(object_key, data, content_type=content_type)
+    doc = BodyLandmarks(
+        session_id=session_id,
+        patient_id=patient_id,
+        node_id=node_id,
+        video_segment_id=video_segment_id,
+        source=source,
+        model_name=model_name,
+        start_ts=start_ts,
+        end_ts=end_ts,
+        frame_count=frame_count,
+        bucket=settings.MINIO_BUCKET,
+        object_key=object_key,
+        size_bytes=size,
+        status=ProcessingStatus.PROCESSED,
+    )
+    await doc.insert()
+    return doc
 
 
 @router.post(
@@ -124,5 +187,5 @@ async def download_landmarks(
         bucket=doc.bucket,
         object_key=doc.object_key,
         download_url=url,
-        expires_in=settings.MINIO_PRESIGN_EXPIRY,
+        expires_in=settings.MINIO_DOWNLOAD_EXPIRY,
     )

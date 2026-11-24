@@ -139,5 +139,5 @@ async def download_pain_event_video(
         bucket=event.bucket,
         object_key=event.video_object_key,
         download_url=url,
-        expires_in=settings.MINIO_PRESIGN_EXPIRY,
+        expires_in=settings.MINIO_DOWNLOAD_EXPIRY,
     )

@@ -124,5 +124,5 @@ async def download_document(
         bucket=doc.bucket,
         object_key=doc.object_key,
         download_url=url,
-        expires_in=settings.MINIO_PRESIGN_EXPIRY,
+        expires_in=settings.MINIO_DOWNLOAD_EXPIRY,
     )
