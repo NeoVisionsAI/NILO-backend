@@ -92,8 +92,8 @@ class Settings(BaseSettings):
     MINIO_PRESIGN_EXPIRY: int = 3600  # config.yaml
     # Presigned GET (reproducción / revisión clínica). Se puede renovar al abrir sesión.
     MINIO_DOWNLOAD_EXPIRY: int = 86400  # 24 h
-    # Subida directa vía API (multipart) para binarios pequeños.
-    MAX_PROXY_UPLOAD_BYTES: int = 32 * 1024 * 1024  # 32 MiB
+    # Subida directa vía API (multipart). Landmarks MediaPipe 1–2 min pueden ser varios MiB.
+    MAX_PROXY_UPLOAD_BYTES: int = 64 * 1024 * 1024  # 64 MiB (JSON; más si el cliente envía .gz)
     # Enable server-side encryption (SSE-S3) as bucket default. Requires a KMS
     # configured on the MinIO server (see docker-compose.yml).
     MINIO_SSE: bool = True  # config.yaml

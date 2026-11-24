@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 
 from app.api.deps import get_current_user, require_staff
 from app.core.config import settings
+from app.core.upload_body import read_proxy_upload_bytes
 from app.models.audio import AudioRecording
 from app.models.base import utcnow
 from app.models.enums import AudioKind, ProcessingStatus, TranscriptionStatus
@@ -51,12 +52,7 @@ async def upload_audio_body(
         patient_id=patient_id,
         node_id=node_id,
     )
-    data = await file.read()
-    if len(data) > settings.MAX_PROXY_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="File too large for API upload",
-        )
+    data = await read_proxy_upload_bytes(file)
     filename = f"{int(start_ts.timestamp())}_{kind.value}.{file_extension}"
     object_key = minio_client.build_object_key(
         patient_id=str(patient_id),

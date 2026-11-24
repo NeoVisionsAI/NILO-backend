@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 
 from app.api.deps import get_current_user, require_staff
 from app.core.config import settings
+from app.core.upload_body import read_proxy_upload_bytes
 from app.models.base import utcnow
 from app.models.enums import LandmarkSource, ProcessingStatus
 from app.models.landmarks import BodyLandmarks
@@ -33,19 +34,33 @@ class _LandmarksUploadResponse(LandmarksOut):
     "/upload",
     response_model=LandmarksOut,
     status_code=status.HTTP_201_CREATED,
+    summary="Upload landmarks file via API (multipart)",
+    description=(
+        "Multipart: form fields + `file` (JSON or **gzip** `.json.gz`). "
+        "Stored in MinIO as JSON. Max payload after decompress: "
+        f"{64} MiB (`MAX_PROXY_UPLOAD_BYTES`). "
+        "Front: schema `nilo-mediapipe-face-capture-v1`, `landmark_encoding: flat-xyz`; "
+        "gzip recommended for 1–2 min captures (~478 points/frame). "
+        "nginx: `client_max_body_size 64m` on `/api/`."
+    ),
 )
 async def upload_landmarks_body(
     session_id: Annotated[PydanticObjectId, Form()],
     patient_id: Annotated[PydanticObjectId, Form()],
     start_ts: Annotated[datetime, Form(description="ISO-8601")],
-    file: UploadFile = File(...),
+    file: UploadFile = File(
+        ...,
+        description="JSON landmarks or gzip-compressed JSON (.json.gz)",
+    ),
     source: LandmarkSource = Form(LandmarkSource.MEDIAPIPE),
     node_id: Annotated[PydanticObjectId | None, Form()] = None,
     video_segment_id: Annotated[PydanticObjectId | None, Form()] = None,
     model_name: Annotated[str | None, Form()] = None,
     end_ts: Annotated[datetime | None, Form()] = None,
     frame_count: Annotated[int | None, Form()] = None,
-    file_extension: Annotated[str, Form()] = "json",
+    file_extension: Annotated[
+        str, Form(description="Storage extension, default json (use json if gzip wire)")
+    ] = "json",
     _: User = Depends(require_staff),
 ) -> BodyLandmarks:
     """Multipart upload: API writes to MinIO (no browser presigned PUT)."""
@@ -54,13 +69,11 @@ async def upload_landmarks_body(
         patient_id=patient_id,
         node_id=node_id,
     )
-    data = await file.read()
-    if len(data) > settings.MAX_PROXY_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="File too large for API upload",
-        )
-    filename = f"landmarks_{int(start_ts.timestamp())}_{source.value}.{file_extension}"
+    data = await read_proxy_upload_bytes(file)
+    store_ext = "json"
+    if file_extension and file_extension.lower() not in ("gz", "gzip"):
+        store_ext = file_extension.lstrip(".")
+    filename = f"landmarks_{int(start_ts.timestamp())}_{source.value}.{store_ext}"
     object_key = minio_client.build_object_key(
         patient_id=str(patient_id),
         category="landmarks",
