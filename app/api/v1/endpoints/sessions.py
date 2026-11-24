@@ -11,6 +11,7 @@ from app.models.enums import MonitoringSessionStatus, ProcessingStatus
 from app.models.landmarks import BodyLandmarks
 from app.models.monitoring_session import MonitoringSession, VideoSegment
 from app.models.pain_event import PainEvent
+from app.models.session_text_note import SessionTextNote
 from app.models.patient import Patient
 from app.models.physiological import PhysiologicalReading
 from app.models.user import User
@@ -30,8 +31,10 @@ from app.services.monitoring_session import (
     require_session,
 )
 from app.storage import minio_client
+from app.api.v1.endpoints import session_text_notes
 
 router = APIRouter()
+router.include_router(session_text_notes.router)
 
 
 @router.post(
@@ -113,6 +116,7 @@ async def get_session_overview(
         ),
         landmarks_batches=await count_session_documents(BodyLandmarks, session_id),
         pain_events=await count_session_documents(PainEvent, session_id),
+        text_notes=await count_session_documents(SessionTextNote, session_id),
     )
 
 

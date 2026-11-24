@@ -11,6 +11,7 @@ from app.models.node import Node
 from app.models.pain_event import PainEvent
 from app.models.patient import Patient
 from app.models.physiological import PhysiologicalReading
+from app.models.session_text_note import SessionTextNote
 from app.models.user import User
 
 ALL_DOCUMENT_MODELS = [
@@ -24,6 +25,7 @@ ALL_DOCUMENT_MODELS = [
     PainEvent,
     BodyLandmarks,
     MedicalDocument,
+    SessionTextNote,
 ]
 
 __all__ = [
@@ -37,5 +39,6 @@ __all__ = [
     "PhysiologicalReading",
     "User",
     "VideoSegment",
+    "SessionTextNote",
     "ALL_DOCUMENT_MODELS",
 ]

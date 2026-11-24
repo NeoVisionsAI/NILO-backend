@@ -52,6 +52,7 @@ class SessionOverviewOut(BaseModel):
     physiological_readings: int
     landmarks_batches: int
     pain_events: int
+    text_notes: int
 
 
 class SegmentUploadRequest(BaseModel):
