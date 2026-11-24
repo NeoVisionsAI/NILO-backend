@@ -56,6 +56,7 @@ class PatientOut(BaseModel):
     room: str | None = None
     bed: str | None = None
     monitoring_active: bool
+    active_session_id: PydanticObjectId | None = None
     node_id: PydanticObjectId | None = None
     user_id: PydanticObjectId | None = None
     relative_name: str | None = None

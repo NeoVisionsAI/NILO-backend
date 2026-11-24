@@ -48,6 +48,7 @@ async def sync_clinical_patient(user: User) -> Patient | None:
         room=profile.room,
         bed=profile.bed,
         monitoring_active=profile.monitoring_active,
+        active_session_id=profile.active_session_id,
         node_id=profile.node_id,
         relative_name=profile.relative_name,
         relative_contact=profile.relative_contact,

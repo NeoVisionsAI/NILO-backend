@@ -43,6 +43,8 @@ class PatientProfile(BaseModel):
 
     type_patient: PatientType = PatientType.ADULT
     monitoring_active: bool = False
+    # Set only by the server when monitoring starts (not client-writable).
+    active_session_id: PydanticObjectId | None = None
     # Physical NILO node assigned to this patient for data collection.
     node_id: PydanticObjectId | None = None
     medical_record_number: EncryptedStr | None = None

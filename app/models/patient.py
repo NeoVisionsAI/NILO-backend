@@ -42,6 +42,7 @@ class Patient(Document, TimestampMixin):
 
     # Whether data is currently being collected for this patient.
     monitoring_active: bool = False
+    active_session_id: PydanticObjectId | None = None
 
     # Physical NILO node assigned to this patient.
     node_id: PydanticObjectId | None = None

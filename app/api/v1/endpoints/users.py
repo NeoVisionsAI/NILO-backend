@@ -25,9 +25,11 @@ from app.models.enums import UserRole
 from app.models.node import Node
 from app.models.patient import Patient
 from app.models.user import ClinicianProfile, PatientProfile, User
+from app.schemas.monitoring_session import MonitoringSessionOut
 from app.schemas.user import (
     AssignNodeRequest,
     MonitoringActivePatientOut,
+    MonitoringLifecycleResponse,
     UserCreate,
     UserOut,
     UserUpdate,
@@ -35,6 +37,10 @@ from app.schemas.user import (
 from app.services.clinical_patient import (
     delete_clinical_patient,
     sync_clinical_patient,
+)
+from app.services.monitoring_lifecycle import (
+    start_patient_monitoring,
+    stop_patient_monitoring,
 )
 
 router = APIRouter()
@@ -60,6 +66,49 @@ def _can_manage(actor: User, target: User) -> bool:
     ):
         return True
     return False
+
+
+async def _apply_patient_profile(
+    target: User, pp: dict | None
+) -> bool:
+    """Merge patient profile; run monitoring lifecycle when toggle changes.
+
+    Returns True if lifecycle already saved the user (skip duplicate save).
+    """
+    if pp is None:
+        target.patient_profile = None
+        return False
+
+    if pp.get("medical_record_number"):
+        await _check_mrn_unique(
+            pp["medical_record_number"], exclude_user_id=target.id
+        )
+
+    pp.pop("active_session_id", None)
+    old = target.patient_profile
+    old_ma = old.monitoring_active if old else False
+    monitoring_toggle: bool | None = None
+    if "monitoring_active" in pp and pp["monitoring_active"] != old_ma:
+        monitoring_toggle = pp["monitoring_active"]
+
+    base = old.model_dump() if old else {}
+    base.update(pp)
+    if monitoring_toggle is None:
+        if old is not None:
+            base["active_session_id"] = old.active_session_id
+        target.patient_profile = PatientProfile(**base)
+        return False
+
+    base["monitoring_active"] = old_ma
+    if old is not None:
+        base["active_session_id"] = old.active_session_id
+    target.patient_profile = PatientProfile(**base)
+
+    if monitoring_toggle:
+        await start_patient_monitoring(target)
+    else:
+        await stop_patient_monitoring(target)
+    return True
 
 
 async def _check_mrn_unique(mrn: str | None, exclude_user_id=None) -> None:
@@ -236,26 +285,58 @@ async def update_user(
         target.clinician_profile = (
             ClinicianProfile(**cp) if cp is not None else None
         )
+    lifecycle_saved = False
     if "patient_profile" in data:
         pp = data.pop("patient_profile")
-        if pp and pp.get("medical_record_number"):
-            await _check_mrn_unique(
-                pp["medical_record_number"], exclude_user_id=target.id
-            )
-        target.patient_profile = (
-            PatientProfile(**pp) if pp is not None else None
-        )
+        lifecycle_saved = await _apply_patient_profile(target, pp)
 
     for key, value in data.items():
         setattr(target, key, value)
 
-    target.updated_at = utcnow()
-    await target.save()
-
-    if target.type_user == UserRole.PATIENT:
-        await sync_clinical_patient(target)
+    if not lifecycle_saved:
+        target.updated_at = utcnow()
+        await target.save()
+        if target.type_user == UserRole.PATIENT:
+            await sync_clinical_patient(target)
 
     return target
+
+
+@router.post(
+    "/{user_id}/monitoring/start",
+    response_model=MonitoringLifecycleResponse,
+)
+async def monitoring_start(
+    user_id: PydanticObjectId, actor: User = Depends(get_current_user)
+) -> MonitoringLifecycleResponse:
+    target = await User.get(user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not _can_manage(actor, target):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not allowed to update this user",
+        )
+    user, session = await start_patient_monitoring(target)
+    return MonitoringLifecycleResponse(
+        user=UserOut.model_validate(user),
+        session=MonitoringSessionOut.model_validate(session),
+    )
+
+
+@router.post("/{user_id}/monitoring/stop", response_model=UserOut)
+async def monitoring_stop(
+    user_id: PydanticObjectId, actor: User = Depends(get_current_user)
+) -> User:
+    target = await User.get(user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not _can_manage(actor, target):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not allowed to update this user",
+        )
+    return await stop_patient_monitoring(target)
 
 
 @router.patch("/{user_id}/node", response_model=UserOut)

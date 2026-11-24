@@ -6,6 +6,7 @@ from beanie import PydanticObjectId
 from pydantic import BaseModel, ConfigDict, EmailStr, model_validator
 
 from app.models.enums import ClinicianType, PatientType, Sex, UserRole
+from app.schemas.monitoring_session import MonitoringSessionOut
 
 
 class ClinicianProfileIn(BaseModel):
@@ -18,6 +19,7 @@ class ClinicianProfileIn(BaseModel):
 class PatientProfileIn(BaseModel):
     type_patient: PatientType = PatientType.ADULT
     monitoring_active: bool = False
+    # active_session_id is server-only (see PatientProfileOut)
     node_id: PydanticObjectId | None = None
     medical_record_number: str | None = None
     sex: Sex = Sex.UNKNOWN
@@ -92,6 +94,7 @@ class PatientProfileOut(BaseModel):
 
     type_patient: PatientType
     monitoring_active: bool
+    active_session_id: PydanticObjectId | None = None
     node_id: PydanticObjectId | None = None
     medical_record_number: str | None = None
     sex: Sex
@@ -126,6 +129,11 @@ class UserOut(BaseModel):
 
 class AssignNodeRequest(BaseModel):
     node_id: PydanticObjectId | None = None
+
+
+class MonitoringLifecycleResponse(BaseModel):
+    user: UserOut
+    session: MonitoringSessionOut
 
 
 class MonitoringActivePatientOut(BaseModel):
