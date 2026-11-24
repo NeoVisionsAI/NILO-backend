@@ -17,9 +17,12 @@ NILO_INFRA_HOST: 127.0.0.1
 # Puertos publicados en NILO_INFRA_HOST (docker-compose: mongo 27018, minio 9002).
 MONGODB_PORT: 27018
 MINIO_API_PORT: 9002
-# Opcional: IP/DNS distinta para URLs presignadas de MinIO (nilo-node, navegador).
-# Si no se define, se usa NILO_INFRA_HOST. En Docker all-in-one suele ser la IP LAN del host.
-# MINIO_PUBLIC_HOST: 192.168.1.43
+# Opcional: DNS público para URLs presignadas (navegador HTTPS, nilo-node).
+# Si no se define, se usa NILO_INFRA_HOST (suele dar Mixed Content en https://nilomed.eu).
+# MINIO_PUBLIC_HOST: minio.nilomed.eu
+# MINIO_PUBLIC_SECURE: true
+# MINIO_PUBLIC_PORT: 443
+# Guía: docs/10.minio_browser_uploads.md
 
 # --- MongoDB (usuarios; contraseñas en credentials.env) ---
 # MONGODB_HOST / MINIO_* se derivan de NILO_INFRA_HOST salvo override por env o docker-compose.

@@ -50,6 +50,13 @@ async def lifespan(app: FastAPI):
         settings.CORS_ORIGINS,
         settings.CORS_ORIGIN_REGEX or "(disabled)",
     )
+    logger.info(
+        "MinIO internal=%s secure=%s | presign=%s secure=%s",
+        settings.MINIO_ENDPOINT,
+        settings.MINIO_SECURE,
+        settings.MINIO_PUBLIC_ENDPOINT,
+        settings.minio_presign_secure(),
+    )
     await connect_to_mongo()
     try:
         ensure_bucket()

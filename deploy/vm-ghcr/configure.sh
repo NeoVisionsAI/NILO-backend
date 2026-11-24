@@ -16,6 +16,8 @@ EXAMPLE="${CRED}.example"
 declare -A V=(
   [NILO_INFRA_HOST]=""
   [MINIO_PUBLIC_HOST]=""
+  [MINIO_PUBLIC_SECURE]=""
+  [MINIO_PUBLIC_PORT]=""
   [MONGODB_PORT]="27018"
   [MINIO_API_PORT]="9002"
   [MONGODB_ADMIN_USER]="admin"
@@ -140,6 +142,14 @@ MONGODB_APP_PASSWORD=${V[MONGODB_APP_PASSWORD]}
 MONGODB_PROVISION=${V[MONGODB_PROVISION]}
 
 # --- MinIO ---
+EOF
+  if [[ -n "${V[MINIO_PUBLIC_SECURE]}" ]]; then
+    echo "MINIO_PUBLIC_SECURE=${V[MINIO_PUBLIC_SECURE]}" >>"$tmp"
+  fi
+  if [[ -n "${V[MINIO_PUBLIC_PORT]}" ]]; then
+    echo "MINIO_PUBLIC_PORT=${V[MINIO_PUBLIC_PORT]}" >>"$tmp"
+  fi
+  cat >>"$tmp" <<EOF
 MINIO_ACCESS_KEY=${V[MINIO_ACCESS_KEY]}
 MINIO_SECRET_KEY=${V[MINIO_SECRET_KEY]}
 
@@ -183,7 +193,7 @@ show_summary() {
   echo ""
   echo "=== Resumen (secretos enmascarados) ==="
   echo "  NILO_INFRA_HOST=${V[NILO_INFRA_HOST]}"
-  echo "  MINIO_PUBLIC_HOST=${V[MINIO_PUBLIC_HOST]}"
+  echo "  MINIO_PUBLIC_HOST=${V[MINIO_PUBLIC_HOST]} (presign HTTPS=${V[MINIO_PUBLIC_SECURE]:-auto} port=${V[MINIO_PUBLIC_PORT]:-auto})"
   echo "  MONGODB_PORT=${V[MONGODB_PORT]}  MINIO_API_PORT=${V[MINIO_API_PORT]}"
   echo "  Mongo admin=${V[MONGODB_ADMIN_USER]} / $(mask "${V[MONGODB_ADMIN_PASSWORD]}")"
   echo "  Mongo db=${V[MONGODB_DB]} app=${V[MONGODB_APP_USER]} / $(mask "${V[MONGODB_APP_PASSWORD]}")"
@@ -206,9 +216,12 @@ section_infra() {
   if [[ -z "${V[MINIO_PUBLIC_HOST]}" ]]; then
     V[MINIO_PUBLIC_HOST]="${V[NILO_INFRA_HOST]}"
   fi
-  prompt MINIO_PUBLIC_HOST "IP/DNS para URLs presignadas MinIO (clientes/nilo-node)"
+  prompt MINIO_PUBLIC_HOST "DNS público presignadas (ej. minio.nilomed.eu; no IP LAN si el front es HTTPS)"
+  prompt MINIO_PUBLIC_SECURE "Presignadas con HTTPS (true/false; true en nilomed.eu)" "${V[MINIO_PUBLIC_SECURE]:-true}"
+  prompt MINIO_PUBLIC_PORT "Puerto público presignadas (vacío=443 si HTTPS)" "${V[MINIO_PUBLIC_PORT]}"
   prompt MONGODB_PORT "Puerto Mongo en el host" "${V[MONGODB_PORT]}"
-  prompt MINIO_API_PORT "Puerto API MinIO en el host" "${V[MINIO_API_PORT]}"
+  prompt MINIO_API_PORT "Puerto API MinIO en el host (LAN)" "${V[MINIO_API_PORT]}"
+  echo "  Ver docs/10.minio_browser_uploads.md (nginx + CORS MinIO)."
 }
 
 section_mongo() {

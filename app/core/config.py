@@ -55,8 +55,12 @@ class Settings(BaseSettings):
     MONGODB_PORT: int = 27018
     MINIO_API_PORT: int = 9002
     # Presigned MinIO URLs para nilo-node/navegador (host:puerto). Si no se define,
-    # se usa NILO_INFRA_HOST. Pon otra IP si los clientes no pueden usar 127.0.0.1.
+    # se usa NILO_INFRA_HOST. En producción HTTPS (nilomed.eu) usa un hostname público
+    # distinto de la IP LAN y MINIO_PUBLIC_SECURE=true (ver docs/10.minio_browser_uploads.md).
     MINIO_PUBLIC_HOST: str | None = None
+    # Puerto público para presignadas (p. ej. 443 detrás de nginx). Por defecto 443 si
+    # MINIO_PUBLIC_SECURE, si no MINIO_API_PORT.
+    MINIO_PUBLIC_PORT: int | None = None
 
     # --- MongoDB (config.yaml + credentials.env passwords) ---
     # Normalmente derivados de NILO_INFRA_HOST; docker-compose los sobreescribe (mongo:27017).
@@ -80,7 +84,9 @@ class Settings(BaseSettings):
     MINIO_PUBLIC_ENDPOINT: str | None = None
     MINIO_ACCESS_KEY: str = "minioadmin"  # credentials.env
     MINIO_SECRET_KEY: str = "minioadmin"  # credentials.env
-    MINIO_SECURE: bool = False  # config.yaml
+    MINIO_SECURE: bool = False  # config.yaml (conexión API → MinIO interna)
+    # HTTPS en URLs presignadas (navegador / mixed content). Si no se define, usa MINIO_SECURE.
+    MINIO_PUBLIC_SECURE: bool | None = None
     MINIO_BUCKET: str = "nilo-data"  # config.yaml
     # How long presigned URLs stay valid, in seconds.
     MINIO_PRESIGN_EXPIRY: int = 3600  # config.yaml
@@ -200,12 +206,28 @@ class Settings(BaseSettings):
             )
         if self.MINIO_PUBLIC_ENDPOINT is None:
             public_host = (self.MINIO_PUBLIC_HOST or host).strip()
-            object.__setattr__(
-                self,
-                "MINIO_PUBLIC_ENDPOINT",
-                f"{public_host}:{self.MINIO_API_PORT}",
+            pub_secure = (
+                self.MINIO_PUBLIC_SECURE
+                if self.MINIO_PUBLIC_SECURE is not None
+                else self.MINIO_SECURE
             )
+            public_port = self.MINIO_PUBLIC_PORT
+            if public_port is None:
+                public_port = 443 if pub_secure else self.MINIO_API_PORT
+            if pub_secure and public_port == 443:
+                public_endpoint = public_host
+            elif not pub_secure and public_port == 80:
+                public_endpoint = public_host
+            else:
+                public_endpoint = f"{public_host}:{public_port}"
+            object.__setattr__(self, "MINIO_PUBLIC_ENDPOINT", public_endpoint)
         return self
+
+    def minio_presign_secure(self) -> bool:
+        """Whether presigned GET/PUT URLs must use https://."""
+        if self.MINIO_PUBLIC_SECURE is not None:
+            return self.MINIO_PUBLIC_SECURE
+        return self.MINIO_SECURE
 
     @property
     def mongodb_admin_uri(self) -> str:

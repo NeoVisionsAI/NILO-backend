@@ -20,12 +20,13 @@ _client: Minio | None = None
 _presign_client: Minio | None = None
 
 
-def _build_minio_client(endpoint: str) -> Minio:
+def _build_minio_client(endpoint: str, *, secure: bool | None = None) -> Minio:
+    use_tls = settings.MINIO_SECURE if secure is None else secure
     return Minio(
         endpoint,
         access_key=settings.MINIO_ACCESS_KEY,
         secret_key=settings.MINIO_SECRET_KEY,
-        secure=settings.MINIO_SECURE,
+        secure=use_tls,
     )
 
 
@@ -42,7 +43,9 @@ def get_presign_minio() -> Minio:
     global _presign_client
     if _presign_client is None:
         endpoint = settings.MINIO_PUBLIC_ENDPOINT or settings.MINIO_ENDPOINT
-        _presign_client = _build_minio_client(endpoint)
+        _presign_client = _build_minio_client(
+            endpoint, secure=settings.minio_presign_secure()
+        )
     return _presign_client
 
 
