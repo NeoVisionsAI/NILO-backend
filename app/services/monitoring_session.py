@@ -71,5 +71,6 @@ async def count_session_documents(
     session_id: PydanticObjectId,
 ) -> int:
     """Count documents linked to a monitoring session."""
-    collection = document_model.get_motor_collection()
-    return await collection.count_documents({"session_id": session_id})
+    return await document_model.find(
+        document_model.session_id == session_id
+    ).count()

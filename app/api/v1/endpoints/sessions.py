@@ -19,6 +19,7 @@ from app.schemas.common import PresignedDownload, PresignedUpload
 from app.schemas.monitoring_session import (
     MonitoringSessionCreate,
     MonitoringSessionOut,
+    MonitoringSessionUpdate,
     SegmentOut,
     SegmentUploadRequest,
     SegmentUploadResponse,
@@ -100,6 +101,22 @@ async def get_session(
     session_id: PydanticObjectId, _: User = Depends(get_current_user)
 ) -> MonitoringSession:
     return await require_session(session_id)
+
+
+@router.patch("/{session_id}", response_model=MonitoringSessionOut)
+async def patch_session(
+    session_id: PydanticObjectId,
+    payload: MonitoringSessionUpdate,
+    _: User = Depends(require_staff),
+) -> MonitoringSession:
+    """Update clinician-facing metadata (e.g. ``display_name``)."""
+    session = await require_session(session_id)
+    data = payload.model_dump(exclude_unset=True)
+    if "display_name" in data:
+        session.display_name = data["display_name"]
+        session.updated_at = utcnow()
+        await session.save()
+    return session
 
 
 @router.get("/{session_id}/overview", response_model=SessionOverviewOut)

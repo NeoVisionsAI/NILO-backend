@@ -29,6 +29,8 @@ class MonitoringSession(Document, TimestampMixin):
     node_id: PydanticObjectId | None = None
     # External id from nilo-node (UUID) for correlation on the device side.
     external_session_id: str | None = None
+    # Optional human label for clinicians (does not affect ingestion ids).
+    display_name: str | None = Field(None, max_length=120)
 
     started_at: datetime = Field(default_factory=utcnow)
     ended_at: datetime | None = None
