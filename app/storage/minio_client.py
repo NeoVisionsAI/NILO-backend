@@ -86,8 +86,16 @@ def _slug_date(ts: datetime | None = None) -> str:
 # Modalities under ``patients/<pid>/sessions/<sid>/``.
 MODALITY_AUDIO = "audio"
 MODALITY_AUDIO_NOTES = "audio_notes"
+MODALITY_FACE_LANDMARKS = "face_landmarks"
 MODALITY_POSE = "pose"
 MODALITY_VIDEO = "video"
+
+
+def landmarks_modality(capture_kind: str) -> str:
+    """Map capture kind to storage folder under the session."""
+    if capture_kind == "face":
+        return MODALITY_FACE_LANDMARKS
+    return MODALITY_POSE
 
 
 def build_object_key(

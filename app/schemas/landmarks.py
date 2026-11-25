@@ -5,7 +5,7 @@ from datetime import datetime
 from beanie import PydanticObjectId
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import LandmarkSource, ProcessingStatus
+from app.models.enums import LandmarkCaptureKind, LandmarkSource, ProcessingStatus
 
 
 class LandmarksUploadRequest(BaseModel):
@@ -17,6 +17,7 @@ class LandmarksUploadRequest(BaseModel):
     )
     video_segment_id: PydanticObjectId | None = None
     source: LandmarkSource = LandmarkSource.MEDIAPIPE
+    capture_kind: LandmarkCaptureKind = LandmarkCaptureKind.FACE
     model_name: str | None = None
     start_ts: datetime
     end_ts: datetime | None = None
@@ -33,6 +34,7 @@ class LandmarksOut(BaseModel):
     node_id: PydanticObjectId | None = None
     video_segment_id: PydanticObjectId | None = None
     source: LandmarkSource
+    capture_kind: LandmarkCaptureKind = LandmarkCaptureKind.FACE
     model_name: str | None = None
     start_ts: datetime
     end_ts: datetime | None = None

@@ -14,7 +14,7 @@ from app.api.deps import get_current_user, require_staff
 from app.core.config import settings
 from app.core.upload_body import read_landmarks_upload_bytes
 from app.models.base import utcnow
-from app.models.enums import LandmarkSource, ProcessingStatus
+from app.models.enums import LandmarkCaptureKind, LandmarkSource, ProcessingStatus
 from app.models.landmarks import BodyLandmarks
 from app.models.user import User
 from app.schemas.common import PresignedDownload
@@ -51,6 +51,10 @@ async def upload_landmarks_body(
         description="JSON, gzip (.json.gz), or zip containing one landmarks .json",
     ),
     source: LandmarkSource = Form(LandmarkSource.MEDIAPIPE),
+    capture_kind: LandmarkCaptureKind = Form(
+        LandmarkCaptureKind.FACE,
+        description="face → MinIO face_landmarks/; pose → pose/ (cuerpo)",
+    ),
     node_id: Annotated[PydanticObjectId | None, Form()] = None,
     video_segment_id: Annotated[PydanticObjectId | None, Form()] = None,
     model_name: Annotated[str | None, Form()] = None,
@@ -72,10 +76,11 @@ async def upload_landmarks_body(
     if file_extension and file_extension.lower() not in ("gz", "gzip", "zip"):
         store_ext = file_extension.lstrip(".")
     filename = f"landmarks_{int(start_ts.timestamp())}_{source.value}.{store_ext}"
+    modality = minio_client.landmarks_modality(capture_kind.value)
     object_key = minio_client.build_object_key(
         patient_id=str(patient_id),
         session_id=str(session_id),
-        modality=minio_client.MODALITY_POSE,
+        modality=modality,
         filename=filename,
         ts=start_ts,
     )
@@ -87,6 +92,7 @@ async def upload_landmarks_body(
         node_id=node_id,
         video_segment_id=video_segment_id,
         source=source,
+        capture_kind=capture_kind,
         model_name=model_name,
         start_ts=start_ts,
         end_ts=end_ts,
@@ -114,10 +120,11 @@ async def request_landmarks_upload(
         node_id=payload.node_id,
     )
     filename = f"landmarks_{int(payload.start_ts.timestamp())}_{payload.source.value}.{payload.file_extension}"
+    modality = minio_client.landmarks_modality(payload.capture_kind.value)
     object_key = minio_client.build_object_key(
         patient_id=str(payload.patient_id),
         session_id=str(payload.session_id),
-        modality=minio_client.MODALITY_POSE,
+        modality=modality,
         filename=filename,
         ts=payload.start_ts,
     )
@@ -127,6 +134,7 @@ async def request_landmarks_upload(
         node_id=payload.node_id,
         video_segment_id=payload.video_segment_id,
         source=payload.source,
+        capture_kind=payload.capture_kind,
         model_name=payload.model_name,
         start_ts=payload.start_ts,
         end_ts=payload.end_ts,

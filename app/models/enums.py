@@ -81,6 +81,13 @@ class LandmarkSource(str, Enum):
     OTHER = "other"
 
 
+class LandmarkCaptureKind(str, Enum):
+    """Face mesh vs full-body pose (MinIO subfolder)."""
+
+    FACE = "face"
+    POSE = "pose"
+
+
 class DocumentType(str, Enum):
     REPORT = "report"
     LAB_RESULT = "lab_result"

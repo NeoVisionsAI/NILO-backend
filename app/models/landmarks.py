@@ -10,7 +10,7 @@ from datetime import datetime
 from beanie import Document, Indexed, PydanticObjectId
 
 from app.models.base import TimestampMixin
-from app.models.enums import LandmarkSource, ProcessingStatus
+from app.models.enums import LandmarkCaptureKind, LandmarkSource, ProcessingStatus
 
 
 class BodyLandmarks(Document, TimestampMixin):
@@ -21,6 +21,7 @@ class BodyLandmarks(Document, TimestampMixin):
     video_segment_id: PydanticObjectId | None = None
 
     source: LandmarkSource = LandmarkSource.MEDIAPIPE
+    capture_kind: LandmarkCaptureKind = LandmarkCaptureKind.FACE
     model_name: str | None = None  # e.g. "pose_landmarker_full"
 
     start_ts: datetime
