@@ -39,12 +39,11 @@ async def request_document_upload(
 ) -> _DocumentUploadResponse:
     safe_title = payload.title.lower().replace(" ", "_")[:50]
     filename = f"{safe_title}.{payload.file_extension}"
-    object_key = minio_client.build_object_key(
+    object_key = minio_client.build_patient_document_key(
         patient_id=str(payload.patient_id),
-        category="documents",
+        doc_type=payload.doc_type.value,
         filename=filename,
         ts=payload.document_date,
-        subpath=payload.doc_type.value,
     )
     doc = MedicalDocument(
         patient_id=payload.patient_id,

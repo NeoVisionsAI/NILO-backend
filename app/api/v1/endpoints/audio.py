@@ -54,12 +54,17 @@ async def upload_audio_body(
     )
     data = await read_proxy_upload_bytes(file)
     filename = f"{int(start_ts.timestamp())}_{kind.value}.{file_extension}"
+    modality = (
+        minio_client.MODALITY_AUDIO_NOTES
+        if kind == AudioKind.VOICE_NOTE
+        else minio_client.MODALITY_AUDIO
+    )
     object_key = minio_client.build_object_key(
         patient_id=str(patient_id),
-        category="audio",
+        session_id=str(session_id),
+        modality=modality,
         filename=filename,
         ts=start_ts,
-        subpath=str(session_id),
     )
     content_type = file.content_type or "application/octet-stream"
     size = minio_client.put_object_bytes(object_key, data, content_type=content_type)
@@ -96,12 +101,17 @@ async def request_audio_upload(
         node_id=payload.node_id,
     )
     filename = f"{int(payload.start_ts.timestamp())}_{payload.kind.value}.{payload.file_extension}"
+    modality = (
+        minio_client.MODALITY_AUDIO_NOTES
+        if payload.kind == AudioKind.VOICE_NOTE
+        else minio_client.MODALITY_AUDIO
+    )
     object_key = minio_client.build_object_key(
         patient_id=str(payload.patient_id),
-        category="audio",
+        session_id=str(payload.session_id),
+        modality=modality,
         filename=filename,
         ts=payload.start_ts,
-        subpath=str(payload.session_id),
     )
     audio = AudioRecording(
         session_id=payload.session_id,

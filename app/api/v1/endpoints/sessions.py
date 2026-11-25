@@ -184,10 +184,10 @@ async def request_video_segment_upload(
     filename = f"{payload.seq:06d}_{int(payload.start_ts.timestamp())}.{payload.file_extension}"
     object_key = minio_client.build_object_key(
         patient_id=str(session.patient_id),
-        category="video",
+        session_id=str(session.id),
+        modality=minio_client.MODALITY_VIDEO,
         filename=filename,
         ts=payload.start_ts,
-        subpath=str(session.id),
     )
 
     segment = VideoSegment(

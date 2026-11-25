@@ -78,26 +78,48 @@ def ensure_bucket(bucket: str | None = None) -> None:
 
 
 def _slug_date(ts: datetime | None = None) -> str:
+    """Date folder: día-mes-año (UTC)."""
     ts = ts or datetime.now(timezone.utc)
-    return ts.strftime("%Y-%m-%d")
+    return ts.strftime("%d-%m-%Y")
+
+
+# Modalities under ``patients/<pid>/sessions/<sid>/``.
+MODALITY_AUDIO = "audio"
+MODALITY_AUDIO_NOTES = "audio_notes"
+MODALITY_POSE = "pose"
+MODALITY_VIDEO = "video"
 
 
 def build_object_key(
+    *,
     patient_id: str,
-    category: str,
+    session_id: str,
+    modality: str,
     filename: str,
     ts: datetime | None = None,
-    subpath: str | None = None,
 ) -> str:
-    """Build a structured object key.
+    """Build a session-scoped object key.
 
-    Example: ``patients/<pid>/video/2026-07-01/<session>/000001_start.mp4``
+    Example::
+
+        patients/<pid>/sessions/<sid>/pose/24-11-2026/landmarks_1730000_mediapipe.json
     """
-    parts = ["patients", patient_id, category, _slug_date(ts)]
-    if subpath:
-        parts.append(subpath.strip("/"))
-    parts.append(filename)
-    return "/".join(parts)
+    date_part = _slug_date(ts)
+    sid = session_id.strip("/")
+    return (
+        f"patients/{patient_id}/sessions/{sid}/{modality}/{date_part}/{filename}"
+    )
+
+
+def build_patient_document_key(
+    *,
+    patient_id: str,
+    doc_type: str,
+    filename: str,
+    ts: datetime | None = None,
+) -> str:
+    """Non-session clinical documents (PDF, informes…)."""
+    return f"patients/{patient_id}/documents/{doc_type}/{_slug_date(ts)}/{filename}"
 
 
 def presigned_put_url(

@@ -42,10 +42,10 @@ async def create_pain_event(
     filename = f"pain_{int(payload.start_ts.timestamp())}.{payload.file_extension}"
     object_key = minio_client.build_object_key(
         patient_id=str(payload.patient_id),
-        category="pain",
+        session_id=str(payload.session_id),
+        modality=minio_client.MODALITY_VIDEO,
         filename=filename,
         ts=payload.start_ts,
-        subpath=str(payload.session_id),
     )
     event = PainEvent(
         session_id=payload.session_id,

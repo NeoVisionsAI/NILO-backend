@@ -74,10 +74,10 @@ async def upload_landmarks_body(
     filename = f"landmarks_{int(start_ts.timestamp())}_{source.value}.{store_ext}"
     object_key = minio_client.build_object_key(
         patient_id=str(patient_id),
-        category="landmarks",
+        session_id=str(session_id),
+        modality=minio_client.MODALITY_POSE,
         filename=filename,
         ts=start_ts,
-        subpath=str(session_id),
     )
     content_type = "application/json"
     size = minio_client.put_object_bytes(object_key, data, content_type=content_type)
@@ -116,10 +116,10 @@ async def request_landmarks_upload(
     filename = f"landmarks_{int(payload.start_ts.timestamp())}_{payload.source.value}.{payload.file_extension}"
     object_key = minio_client.build_object_key(
         patient_id=str(payload.patient_id),
-        category="landmarks",
+        session_id=str(payload.session_id),
+        modality=minio_client.MODALITY_POSE,
         filename=filename,
         ts=payload.start_ts,
-        subpath=str(payload.session_id),
     )
     doc = BodyLandmarks(
         session_id=payload.session_id,
