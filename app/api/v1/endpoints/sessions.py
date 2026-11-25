@@ -71,6 +71,9 @@ async def create_session(
         or settings.DEFAULT_HLS_SEGMENT_SECONDS,
     )
     await session.insert()
+    if not session.external_session_id:
+        session.external_session_id = str(session.id)
+        await session.save()
     return session
 
 

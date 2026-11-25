@@ -6,7 +6,7 @@ Copia al chat de **NILO-backend**.
 
 ## 1. Campo `display_name` en `MonitoringSession`
 
-**Necesidad:** En la ficha del paciente el clínico ve el UUID (`external_session_id`) y quiere un **nombre legible** (ej. «Turno noche UCI») sin cambiar el `id` de Mongo ni el UUID técnico.
+**Necesidad:** En la ficha el clínico ve el **id de sesión** (`MonitoringSession.id`, el mismo que MinIO) y quiere un **nombre legible** (ej. «Turno noche UCI») sin cambiar el `id` de Mongo ni el UUID técnico.
 
 ### Modelo
 
@@ -58,7 +58,7 @@ Actualizar `docs/04.monitoring_sessions.md`:
 | Campo | Uso |
 |-------|-----|
 | `id` | Clave API / ingestión |
-| `external_session_id` | UUID nilo-node |
+| `id` / `external_session_id` | Tras `monitoring/start` ambos coinciden; copiar `id` para MinIO |
 | `display_name` | Etiqueta clínica opcional |
 
 ---

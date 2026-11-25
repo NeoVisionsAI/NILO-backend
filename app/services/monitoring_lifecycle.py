@@ -1,7 +1,6 @@
 """Start/stop patient monitoring with a single active MonitoringSession."""
 
 import logging
-import uuid
 from io import BytesIO
 
 from beanie import PydanticObjectId
@@ -90,11 +89,12 @@ async def start_patient_monitoring(user: User) -> tuple[User, MonitoringSession]
     session = MonitoringSession(
         patient_id=patient.id,
         node_id=node_id,
-        external_session_id=str(uuid.uuid4()),
         archive_chunk_seconds=settings.DEFAULT_VIDEO_CHUNK_SECONDS,
         hls_segment_seconds=settings.DEFAULT_HLS_SEGMENT_SECONDS,
     )
     await session.insert()
+    session.external_session_id = str(session.id)
+    await session.save()
 
     profile.monitoring_active = True
     profile.active_session_id = session.id
