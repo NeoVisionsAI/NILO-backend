@@ -9,6 +9,8 @@ from datetime import datetime
 from typing import Annotated
 
 from beanie import PydanticObjectId
+import logging
+
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -16,6 +18,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Query,
     Response,
     UploadFile,
     status,
@@ -48,6 +51,7 @@ from app.services.clinical_delete import delete_audio_record
 from app.services.monitoring_session import require_active_ingestion
 from app.storage import minio_client
 
+logger = logging.getLogger("nilo.audio")
 router = APIRouter()
 
 
@@ -261,8 +265,8 @@ async def transcribe_uploaded_file(
 @router.post("/{audio_id}/transcribe", response_model=AudioOut)
 async def transcribe_stored_audio(
     audio_id: PydanticObjectId,
-    force: bool = False,
-    language: Annotated[str | None, Form()] = None,
+    force: bool = Query(False),
+    language: str | None = Query(None),
     _: User = Depends(require_staff),
 ) -> AudioRecording:
     """Download audio from MinIO, run Whisper, save ``transcription`` on the row."""
@@ -278,10 +282,28 @@ async def transcribe_stored_audio(
     except TranscriptionError as exc:
         audio = await AudioRecording.get(audio_id)
         if audio is not None:
-            return audio
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
+        ) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Transcribe failed for audio %s", audio_id)
+        audio = await AudioRecording.get(audio_id)
+        if audio is not None:
+            audio.transcription_status = TranscriptionStatus.FAILED
+            audio.updated_at = utcnow()
+            await audio.save()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Transcription engine error"
+                if not settings.DEBUG
+                else str(exc)
+            ),
         ) from exc
 
 

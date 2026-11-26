@@ -58,7 +58,10 @@ async def transcribe_recording(
     if not minio_client.object_exists(audio.object_key, audio.bucket):
         raise TranscriptionError("Audio file missing in storage")
 
-    data = minio_client.get_object_bytes(audio.object_key, audio.bucket)
+    try:
+        data = minio_client.get_object_bytes(audio.object_key, audio.bucket)
+    except Exception as exc:  # noqa: BLE001
+        raise TranscriptionError(f"Cannot read audio from storage: {exc}") from exc
     filename = _guess_filename(audio.object_key, audio.format)
 
     try:

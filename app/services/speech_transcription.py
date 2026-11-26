@@ -91,11 +91,14 @@ def _get_whisper_model():
             settings.WHISPER_MODEL,
             settings.WHISPER_DEVICE,
         )
-        _model = WhisperModel(
-            settings.WHISPER_MODEL,
-            device=settings.WHISPER_DEVICE,
-            compute_type=settings.WHISPER_COMPUTE_TYPE,
-        )
+        try:
+            _model = WhisperModel(
+                settings.WHISPER_MODEL,
+                device=settings.WHISPER_DEVICE,
+                compute_type=settings.WHISPER_COMPUTE_TYPE,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise TranscriptionError(f"Cannot load Whisper model: {exc}") from exc
         return _model
 
 
@@ -145,13 +148,20 @@ def transcribe_audio_bytes(
     try:
         model = _get_whisper_model()
         lang = language or settings.WHISPER_LANGUAGE or None
-        segments, info = model.transcribe(
-            wav_path,
-            language=lang,
-            vad_filter=True,
-            beam_size=5,
-        )
-        parts = [seg.text.strip() for seg in segments if seg.text.strip()]
+        if lang == "":
+            lang = None
+        try:
+            # VAD off en clips cortos: evita falsos “sin voz” en notas de 2–5 s.
+            use_vad = len(audio_bytes) > 48_000
+            segments, info = model.transcribe(
+                wav_path,
+                language=lang,
+                vad_filter=use_vad,
+                beam_size=5,
+            )
+            parts = [seg.text.strip() for seg in segments if seg.text.strip()]
+        except Exception as exc:  # noqa: BLE001
+            raise TranscriptionError(f"Whisper inference failed: {exc}") from exc
         text = " ".join(parts).strip()
         detected = getattr(info, "language", None)
         if not text:
