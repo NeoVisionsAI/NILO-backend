@@ -160,22 +160,36 @@ async def list_landmarks(
     patient_id: PydanticObjectId,
     session_id: PydanticObjectId | None = None,
     node_id: PydanticObjectId | None = None,
+    capture_kind: LandmarkCaptureKind | None = None,
+    storage_ready: bool = True,
     skip: int = 0,
     limit: int = 200,
     _: User = Depends(get_current_user),
 ) -> list[BodyLandmarks]:
+    """List landmark batches. Default: only rows with an object present in MinIO."""
     conditions = [BodyLandmarks.patient_id == patient_id]
     if session_id is not None:
         conditions.append(BodyLandmarks.session_id == session_id)
     if node_id is not None:
         conditions.append(BodyLandmarks.node_id == node_id)
-    return (
+    if capture_kind is not None:
+        conditions.append(BodyLandmarks.capture_kind == capture_kind)
+    rows = (
         await BodyLandmarks.find(*conditions)
         .sort(-BodyLandmarks.start_ts)
         .skip(skip)
         .limit(limit)
         .to_list()
     )
+    if not storage_ready:
+        return rows
+    ready: list[BodyLandmarks] = []
+    for doc in rows:
+        if doc.status == ProcessingStatus.PENDING_UPLOAD:
+            continue
+        if minio_client.object_exists(doc.object_key, doc.bucket):
+            ready.append(doc)
+    return ready
 
 
 @router.post("/{landmarks_id}/confirm", response_model=LandmarksOut)
@@ -227,4 +241,12 @@ async def landmarks_file(
     doc = await BodyLandmarks.get(landmarks_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="Landmarks not found")
+    if not minio_client.object_exists(doc.object_key, doc.bucket):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                "Object not found in storage; the batch may be from an incomplete "
+                "presign upload. Re-capture or delete the Mongo row."
+            ),
+        )
     return streaming_response_for_object(doc.bucket, doc.object_key)
