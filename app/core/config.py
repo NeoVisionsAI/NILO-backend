@@ -90,8 +90,10 @@ class Settings(BaseSettings):
     MINIO_BUCKET: str = "nilo-data"  # config.yaml
     # How long presigned PUT URLs stay valid, in seconds.
     MINIO_PRESIGN_EXPIRY: int = 3600  # config.yaml
-    # Presigned GET (reproducción / revisión clínica). Se puede renovar al abrir sesión.
+    # Presigned GET batch (revisión de sesión entera).
     MINIO_DOWNLOAD_EXPIRY: int = 86400  # 24 h
+    # Presigned GET por fichero (visualizar landmarks, audio, etc.).
+    MINIO_VIEW_EXPIRY: int = 3600  # 60 min
     # Subida directa vía API (multipart). Landmarks MediaPipe 1–2 min pueden ser varios MiB.
     MAX_PROXY_UPLOAD_BYTES: int = 64 * 1024 * 1024  # 64 MiB (JSON; más si el cliente envía .gz)
     # Enable server-side encryption (SSE-S3) as bucket default. Requires a KMS

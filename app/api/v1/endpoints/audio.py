@@ -9,6 +9,7 @@ from typing import Annotated
 
 from beanie import PydanticObjectId
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import StreamingResponse
 
 from app.api.deps import get_current_user, require_staff
 from app.core.config import settings
@@ -24,6 +25,8 @@ from app.schemas.audio import (
     AudioUploadResponse,
 )
 from app.schemas.common import PresignedDownload
+from app.services.media_stream import streaming_response_for_object
+from app.services.presigned_download import mint_presigned_download
 from app.services.monitoring_session import require_active_ingestion
 from app.storage import minio_client
 
@@ -210,15 +213,26 @@ async def set_transcription(
 
 @router.get("/{audio_id}/download", response_model=PresignedDownload)
 async def download_audio(
-    audio_id: PydanticObjectId, _: User = Depends(get_current_user)
+    audio_id: PydanticObjectId,
+    expires_in: int | None = None,
+    _: User = Depends(get_current_user),
 ) -> PresignedDownload:
     audio = await AudioRecording.get(audio_id)
     if audio is None:
         raise HTTPException(status_code=404, detail="Audio not found")
-    url = minio_client.presigned_get_url(audio.object_key, audio.bucket)
-    return PresignedDownload(
+    return mint_presigned_download(
         bucket=audio.bucket,
         object_key=audio.object_key,
-        download_url=url,
-        expires_in=settings.MINIO_DOWNLOAD_EXPIRY,
+        expiry_seconds=expires_in,
     )
+
+
+@router.get("/{audio_id}/file")
+async def audio_file(
+    audio_id: PydanticObjectId,
+    _: User = Depends(get_current_user),
+) -> StreamingResponse:
+    audio = await AudioRecording.get(audio_id)
+    if audio is None:
+        raise HTTPException(status_code=404, detail="Audio not found")
+    return streaming_response_for_object(audio.bucket, audio.object_key)

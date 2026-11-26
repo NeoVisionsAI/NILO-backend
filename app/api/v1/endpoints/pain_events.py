@@ -6,6 +6,7 @@ URL) from which facial landmarks are later extracted for pain assessment.
 
 from beanie import PydanticObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 
 from app.api.deps import get_current_user, require_staff
 from app.core.config import settings
@@ -15,7 +16,9 @@ from app.models.pain_event import PainEvent
 from app.models.user import User
 from app.schemas.common import PresignedDownload
 from app.schemas.pain_event import PainEventCreate, PainEventOut
+from app.services.media_stream import streaming_response_for_object
 from app.services.monitoring_session import require_active_ingestion
+from app.services.presigned_download import mint_presigned_download
 from app.storage import minio_client
 
 router = APIRouter()
@@ -129,15 +132,31 @@ async def confirm_pain_event_upload(
 
 @router.get("/{event_id}/download", response_model=PresignedDownload)
 async def download_pain_event_video(
-    event_id: PydanticObjectId, _: User = Depends(get_current_user)
+    event_id: PydanticObjectId,
+    expires_in: int | None = None,
+    _: User = Depends(get_current_user),
 ) -> PresignedDownload:
     event = await PainEvent.get(event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="Pain event not found")
-    url = minio_client.presigned_get_url(event.video_object_key, event.bucket)
-    return PresignedDownload(
+    if not event.video_object_key:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pain event has no video object",
+        )
+    return mint_presigned_download(
         bucket=event.bucket,
         object_key=event.video_object_key,
-        download_url=url,
-        expires_in=settings.MINIO_DOWNLOAD_EXPIRY,
+        expiry_seconds=expires_in,
     )
+
+
+@router.get("/{event_id}/file")
+async def pain_event_video_file(
+    event_id: PydanticObjectId,
+    _: User = Depends(get_current_user),
+) -> StreamingResponse:
+    event = await PainEvent.get(event_id)
+    if event is None or not event.video_object_key:
+        raise HTTPException(status_code=404, detail="Pain event not found")
+    return streaming_response_for_object(event.bucket, event.video_object_key)

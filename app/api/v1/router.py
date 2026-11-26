@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     patients,
     physiological,
     sessions,
+    storage,
     users,
 )
 
@@ -45,3 +46,4 @@ api_router.include_router(
     prefix="/medical-documents",
     tags=["medical-documents"],
 )
+api_router.include_router(storage.router, prefix="/storage", tags=["storage"])

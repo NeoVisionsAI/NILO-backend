@@ -6,6 +6,7 @@ URL and associated to a patient.
 
 from beanie import PydanticObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 
 from app.api.deps import get_current_user, require_staff
 from app.core.config import settings
@@ -14,6 +15,8 @@ from app.models.enums import ProcessingStatus
 from app.models.medical_document import MedicalDocument
 from app.models.user import User
 from app.schemas.common import PresignedDownload
+from app.services.media_stream import streaming_response_for_object
+from app.services.presigned_download import mint_presigned_download
 from app.schemas.medical_document import (
     MedicalDocumentOut,
     MedicalDocumentUploadRequest,
@@ -113,15 +116,26 @@ async def confirm_document_upload(
 
 @router.get("/{document_id}/download", response_model=PresignedDownload)
 async def download_document(
-    document_id: PydanticObjectId, _: User = Depends(get_current_user)
+    document_id: PydanticObjectId,
+    expires_in: int | None = None,
+    _: User = Depends(get_current_user),
 ) -> PresignedDownload:
     doc = await MedicalDocument.get(document_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
-    url = minio_client.presigned_get_url(doc.object_key, doc.bucket)
-    return PresignedDownload(
+    return mint_presigned_download(
         bucket=doc.bucket,
         object_key=doc.object_key,
-        download_url=url,
-        expires_in=settings.MINIO_DOWNLOAD_EXPIRY,
+        expiry_seconds=expires_in,
     )
+
+
+@router.get("/{document_id}/file")
+async def medical_document_file(
+    document_id: PydanticObjectId,
+    _: User = Depends(get_current_user),
+) -> StreamingResponse:
+    doc = await MedicalDocument.get(document_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return streaming_response_for_object(doc.bucket, doc.object_key)

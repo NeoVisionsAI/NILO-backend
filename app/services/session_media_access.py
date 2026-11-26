@@ -12,7 +12,7 @@ from app.models.landmarks import BodyLandmarks
 from app.models.monitoring_session import VideoSegment
 from app.models.pain_event import PainEvent
 from app.schemas.session_media import SessionMediaAccessOut, SessionMediaItem
-from app.storage import minio_client
+from app.services.presigned_download import mint_presigned_download
 
 _READY_STATUSES = {
     ProcessingStatus.UPLOADED,
@@ -29,15 +29,19 @@ def _download_link(
     bucket: str,
     expiry_seconds: int,
 ) -> SessionMediaItem:
+    presigned = mint_presigned_download(
+        bucket=bucket,
+        object_key=object_key,
+        expiry_seconds=expiry_seconds,
+        default_expiry=expiry_seconds,
+    )
     return SessionMediaItem(
         kind=kind,
         id=resource_id,
         bucket=bucket,
         object_key=object_key,
-        download_url=minio_client.presigned_get_url(
-            object_key, bucket, expiry_seconds=expiry_seconds
-        ),
-        expires_in=expiry_seconds,
+        download_url=presigned.download_url,
+        expires_in=presigned.expires_in,
     )
 
 

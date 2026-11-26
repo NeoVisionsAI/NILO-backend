@@ -2,6 +2,7 @@
 
 from beanie import PydanticObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 
 from app.api.deps import get_current_user, require_staff
 from app.core.config import settings
@@ -32,6 +33,8 @@ from app.services.monitoring_session import (
     require_node,
     require_session,
 )
+from app.services.media_stream import streaming_response_for_object
+from app.services.presigned_download import mint_presigned_download
 from app.services.session_media_access import build_session_media_access
 from app.storage import minio_client
 from app.api.v1.endpoints import session_text_notes
@@ -267,15 +270,26 @@ async def confirm_video_segment_upload(
     "/video-segments/{segment_id}/download", response_model=PresignedDownload
 )
 async def download_video_segment(
-    segment_id: PydanticObjectId, _: User = Depends(get_current_user)
+    segment_id: PydanticObjectId,
+    expires_in: int | None = None,
+    _: User = Depends(get_current_user),
 ) -> PresignedDownload:
     segment = await VideoSegment.get(segment_id)
     if segment is None:
         raise HTTPException(status_code=404, detail="Video segment not found")
-    url = minio_client.presigned_get_url(segment.object_key, segment.bucket)
-    return PresignedDownload(
+    return mint_presigned_download(
         bucket=segment.bucket,
         object_key=segment.object_key,
-        download_url=url,
-        expires_in=settings.MINIO_DOWNLOAD_EXPIRY,
+        expiry_seconds=expires_in,
     )
+
+
+@router.get("/video-segments/{segment_id}/file")
+async def video_segment_file(
+    segment_id: PydanticObjectId,
+    _: User = Depends(get_current_user),
+) -> StreamingResponse:
+    segment = await VideoSegment.get(segment_id)
+    if segment is None:
+        raise HTTPException(status_code=404, detail="Video segment not found")
+    return streaming_response_for_object(segment.bucket, segment.object_key)

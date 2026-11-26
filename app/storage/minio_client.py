@@ -187,6 +187,12 @@ def object_exists(object_key: str, bucket: str | None = None) -> bool:
         return False
 
 
+def open_object(object_key: str, bucket: str | None = None):
+    """Return a streaming GET response (caller must close / release)."""
+    bucket = bucket or settings.MINIO_BUCKET
+    return get_minio().get_object(bucket, object_key)
+
+
 def stat_size(object_key: str, bucket: str | None = None) -> int | None:
     bucket = bucket or settings.MINIO_BUCKET
     try:

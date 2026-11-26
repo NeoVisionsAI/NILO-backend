@@ -9,6 +9,7 @@ from typing import Annotated
 
 from beanie import PydanticObjectId
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import StreamingResponse
 
 from app.api.deps import get_current_user, require_staff
 from app.core.config import settings
@@ -18,6 +19,8 @@ from app.models.enums import LandmarkCaptureKind, LandmarkSource, ProcessingStat
 from app.models.landmarks import BodyLandmarks
 from app.models.user import User
 from app.schemas.common import PresignedDownload
+from app.services.media_stream import streaming_response_for_object
+from app.services.presigned_download import mint_presigned_download
 from app.schemas.landmarks import LandmarksOut, LandmarksUploadRequest
 from app.services.monitoring_session import require_active_ingestion
 from app.storage import minio_client
@@ -196,15 +199,32 @@ async def confirm_landmarks_upload(
 
 @router.get("/{landmarks_id}/download", response_model=PresignedDownload)
 async def download_landmarks(
-    landmarks_id: PydanticObjectId, _: User = Depends(get_current_user)
+    landmarks_id: PydanticObjectId,
+    expires_in: int | None = None,
+    _: User = Depends(get_current_user),
 ) -> PresignedDownload:
     doc = await BodyLandmarks.get(landmarks_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="Landmarks not found")
-    url = minio_client.presigned_get_url(doc.object_key, doc.bucket)
-    return PresignedDownload(
+    if doc.status == ProcessingStatus.PENDING_UPLOAD:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Upload not completed",
+        )
+    return mint_presigned_download(
         bucket=doc.bucket,
         object_key=doc.object_key,
-        download_url=url,
-        expires_in=settings.MINIO_DOWNLOAD_EXPIRY,
+        expiry_seconds=expires_in,
     )
+
+
+@router.get("/{landmarks_id}/file")
+async def landmarks_file(
+    landmarks_id: PydanticObjectId,
+    _: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """Stream JSON (or gzip) from MinIO via API — no presign / CORS."""
+    doc = await BodyLandmarks.get(landmarks_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Landmarks not found")
+    return streaming_response_for_object(doc.bucket, doc.object_key)

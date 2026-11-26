@@ -1,5 +1,7 @@
 """Shared response schemas."""
 
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -17,6 +19,7 @@ class PresignedDownload(BaseModel):
     object_key: str
     download_url: str
     expires_in: int
+    expires_at: datetime | None = None
 
 
 class Message(BaseModel):
