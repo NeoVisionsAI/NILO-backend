@@ -36,6 +36,13 @@ class AudioTranscriptionUpdate(BaseModel):
     transcription_status: TranscriptionStatus = TranscriptionStatus.DONE
 
 
+class AudioTranscriptionResult(BaseModel):
+    """Ad-hoc transcription (multipart file, no Mongo row)."""
+
+    text: str
+    language: str | None = None
+
+
 class AudioOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

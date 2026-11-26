@@ -210,6 +210,15 @@ def open_object(object_key: str, bucket: str | None = None):
     return get_minio().get_object(bucket, object_key)
 
 
+def get_object_bytes(object_key: str, bucket: str | None = None) -> bytes:
+    response = open_object(object_key, bucket)
+    try:
+        return response.read()
+    finally:
+        response.close()
+        response.release_conn()
+
+
 def stat_size(object_key: str, bucket: str | None = None) -> int | None:
     bucket = bucket or settings.MINIO_BUCKET
     try:

@@ -40,6 +40,15 @@ MINIO_DOWNLOAD_EXPIRY: 86400
 MAX_PROXY_UPLOAD_BYTES: 67108864
 MINIO_SSE: true
 
+# --- Transcripción (Whisper local vía faster-whisper; requiere ffmpeg en imagen) ---
+TRANSCRIPTION_ENABLED: true
+WHISPER_MODEL: small
+WHISPER_LANGUAGE: es
+WHISPER_DEVICE: cpu
+WHISPER_COMPUTE_TYPE: int8
+AUTO_TRANSCRIBE_VOICE_NOTES: false
+TRANSCRIPTION_MAX_AUDIO_SECONDS: 600
+
 # --- Security / JWT (non-sensitive) ---
 # JWT_SECRET_KEY is set in credentials.env.
 JWT_ALGORITHM: HS256

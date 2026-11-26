@@ -11,3 +11,4 @@ python-jose[cryptography]==3.5.0
 cryptography==49.0.0
 bcrypt==5.0.0
 python-multipart==0.0.32
+faster-whisper==1.2.1

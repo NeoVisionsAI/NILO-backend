@@ -100,6 +100,16 @@ class Settings(BaseSettings):
     # configured on the MinIO server (see docker-compose.yml).
     MINIO_SSE: bool = True  # config.yaml
 
+    # --- Speech-to-text (faster-whisper / Whisper) ---
+    TRANSCRIPTION_ENABLED: bool = True
+    WHISPER_MODEL: str = "small"
+    WHISPER_LANGUAGE: str = "es"
+    WHISPER_DEVICE: str = "cpu"
+    WHISPER_COMPUTE_TYPE: str = "int8"
+    # Tras subir nota de voz (multipart), transcribir en segundo plano.
+    AUTO_TRANSCRIBE_VOICE_NOTES: bool = False
+    TRANSCRIPTION_MAX_AUDIO_SECONDS: float = 600.0
+
     # --- Backups (config.yaml) ---
     BACKUP_DIR: str = "backups"
     BACKUP_RETENTION_DAYS: int = 14

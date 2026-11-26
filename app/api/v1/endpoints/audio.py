@@ -4,11 +4,22 @@ Raw audio is uploaded to MinIO via presigned URL. Voice notes can later be
 transcribed to text (speech-to-text) while the original audio is preserved.
 """
 
+import asyncio
 from datetime import datetime
 from typing import Annotated
 
 from beanie import PydanticObjectId
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Response,
+    UploadFile,
+    status,
+)
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import get_current_user, require_staff
@@ -20,10 +31,16 @@ from app.models.enums import AudioKind, ProcessingStatus, TranscriptionStatus
 from app.models.user import User
 from app.schemas.audio import (
     AudioOut,
+    AudioTranscriptionResult,
     AudioTranscriptionUpdate,
     AudioUploadRequest,
     AudioUploadResponse,
 )
+from app.services.audio_transcription import (
+    transcribe_recording,
+    transcribe_recording_background,
+)
+from app.services.speech_transcription import TranscriptionError, transcribe_audio_bytes
 from app.schemas.common import PresignedDownload
 from app.services.media_stream import streaming_response_for_object
 from app.services.presigned_download import mint_presigned_download
@@ -38,6 +55,7 @@ router = APIRouter()
     "/upload", response_model=AudioOut, status_code=status.HTTP_201_CREATED
 )
 async def upload_audio_body(
+    background_tasks: BackgroundTasks,
     session_id: Annotated[PydanticObjectId, Form()],
     patient_id: Annotated[PydanticObjectId, Form()],
     start_ts: Annotated[datetime, Form()],
@@ -90,6 +108,13 @@ async def upload_audio_body(
     if kind == AudioKind.VOICE_NOTE:
         audio.transcription_status = TranscriptionStatus.PENDING
     await audio.insert()
+    if (
+        settings.TRANSCRIPTION_ENABLED
+        and settings.AUTO_TRANSCRIBE_VOICE_NOTES
+        and kind == AudioKind.VOICE_NOTE
+        and audio.id is not None
+    ):
+        background_tasks.add_task(transcribe_recording_background, audio.id)
     return audio
 
 
@@ -177,7 +202,9 @@ async def get_audio(
 
 @router.post("/{audio_id}/confirm", response_model=AudioOut)
 async def confirm_audio_upload(
-    audio_id: PydanticObjectId, _: User = Depends(require_staff)
+    audio_id: PydanticObjectId,
+    background_tasks: BackgroundTasks,
+    _: User = Depends(require_staff),
 ) -> AudioRecording:
     audio = await AudioRecording.get(audio_id)
     if audio is None:
@@ -193,7 +220,69 @@ async def confirm_audio_upload(
         audio.transcription_status = TranscriptionStatus.PENDING
     audio.updated_at = utcnow()
     await audio.save()
+    if (
+        settings.TRANSCRIPTION_ENABLED
+        and settings.AUTO_TRANSCRIBE_VOICE_NOTES
+        and audio.kind == AudioKind.VOICE_NOTE
+        and audio.id is not None
+    ):
+        background_tasks.add_task(transcribe_recording_background, audio.id)
     return audio
+
+
+@router.post("/transcribe", response_model=AudioTranscriptionResult)
+async def transcribe_uploaded_file(
+    file: UploadFile = File(...),
+    language: Annotated[str | None, Form()] = None,
+    _: User = Depends(require_staff),
+) -> AudioTranscriptionResult:
+    """Transcribe a raw audio file (webm, wav, mp3…) without storing in MinIO."""
+    if not settings.TRANSCRIPTION_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Transcription is disabled",
+        )
+    data = await read_proxy_upload_bytes(file)
+    try:
+        text, detected = await asyncio.to_thread(
+            transcribe_audio_bytes,
+            data,
+            source_filename=file.filename,
+            language=language,
+        )
+    except TranscriptionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    return AudioTranscriptionResult(text=text, language=detected)
+
+
+@router.post("/{audio_id}/transcribe", response_model=AudioOut)
+async def transcribe_stored_audio(
+    audio_id: PydanticObjectId,
+    force: bool = False,
+    language: Annotated[str | None, Form()] = None,
+    _: User = Depends(require_staff),
+) -> AudioRecording:
+    """Download audio from MinIO, run Whisper, save ``transcription`` on the row."""
+    if not settings.TRANSCRIPTION_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Transcription is disabled",
+        )
+    try:
+        return await transcribe_recording(audio_id, force=force, language=language)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Audio not found") from None
+    except TranscriptionError as exc:
+        audio = await AudioRecording.get(audio_id)
+        if audio is not None:
+            return audio
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
 
 
 @router.patch("/{audio_id}/transcription", response_model=AudioOut)
