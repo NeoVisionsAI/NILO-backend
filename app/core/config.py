@@ -109,6 +109,8 @@ class Settings(BaseSettings):
     # Tras subir nota de voz (multipart), transcribir en segundo plano.
     AUTO_TRANSCRIBE_VOICE_NOTES: bool = False
     TRANSCRIPTION_MAX_AUDIO_SECONDS: float = 600.0
+    # Cargar/descargar Whisper al arrancar la API (evita latencia en el 1.er usuario).
+    WHISPER_WARMUP_ON_STARTUP: bool = True
 
     # --- Backups (config.yaml) ---
     BACKUP_DIR: str = "backups"

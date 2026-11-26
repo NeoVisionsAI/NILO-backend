@@ -1,5 +1,6 @@
 """FastAPI application entrypoint for the NILO backend."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -15,6 +16,7 @@ from app.db.mongodb import close_mongo_connection, connect_to_mongo
 from app.db.seed import seed_demo_users
 from app.models.enums import UserRole
 from app.models.user import User
+from app.services.speech_transcription import warmup_whisper_model
 from app.services.system_health import build_health_report
 from app.storage.minio_client import ensure_bucket
 
@@ -64,6 +66,12 @@ async def lifespan(app: FastAPI):
         logger.warning("Could not ensure MinIO bucket at startup: %s", exc)
     await _bootstrap_root_user()
     await seed_demo_users()
+    if settings.TRANSCRIPTION_ENABLED and settings.WHISPER_WARMUP_ON_STARTUP:
+        logger.info("Whisper warmup starting (model=%s)…", settings.WHISPER_MODEL)
+        try:
+            await asyncio.to_thread(warmup_whisper_model)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Whisper warmup failed: %s", exc)
     yield
     await close_mongo_connection()
 

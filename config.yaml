@@ -48,6 +48,7 @@ WHISPER_DEVICE: cpu
 WHISPER_COMPUTE_TYPE: int8
 AUTO_TRANSCRIBE_VOICE_NOTES: false
 TRANSCRIPTION_MAX_AUDIO_SECONDS: 600
+WHISPER_WARMUP_ON_STARTUP: true
 
 # --- Security / JWT (non-sensitive) ---
 # JWT_SECRET_KEY is set in credentials.env.

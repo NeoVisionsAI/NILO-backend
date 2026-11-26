@@ -32,6 +32,31 @@ compose() {
   docker compose --env-file "$CRED" "$@"
 }
 
+wait_for_api_ready() {
+  local url="${NILO_HEALTH_URL:-http://127.0.0.1:8001/health}"
+  local max_sec="${NILO_HEALTH_WAIT_SEC:-360}"
+  local interval="${NILO_HEALTH_POLL_SEC:-5}"
+  local deadline=$((SECONDS + max_sec))
+  echo "==> Esperando API lista (Whisper incluido, hasta ${max_sec}s): $url"
+  while ((SECONDS < deadline)); do
+    if resp="$(curl -sf --max-time 10 "$url" 2>/dev/null)"; then
+      if command -v jq >/dev/null 2>&1; then
+        if echo "$resp" | jq -e '.ready == true' >/dev/null 2>&1; then
+          echo "==> API ready"
+          echo "$resp" | jq '{ready, transcription, mongodb, minio}' 2>/dev/null || true
+          return 0
+        fi
+      elif echo "$resp" | grep -q '"ready":true'; then
+        echo "==> API ready (sin jq)"
+        return 0
+      fi
+    fi
+    sleep "$interval"
+  done
+  echo "AVISO: timeout esperando /health ready. Revisa: docker compose logs api" >&2
+  return 1
+}
+
 cmd_deploy() {
   require_compose
   require_credentials
@@ -40,7 +65,8 @@ cmd_deploy() {
   compose pull api
   echo "==> Up (detached)"
   compose up -d
-  echo "==> Listo. Health: curl -s http://127.0.0.1:8001/health"
+  wait_for_api_ready || true
+  echo "==> Health manual: curl -s http://127.0.0.1:8001/health | jq ."
 }
 
 # systemd mantiene compose en primer plano (Restart=always si cae).

@@ -7,6 +7,7 @@ import os
 import subprocess
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 from app.core.config import settings
@@ -15,6 +16,7 @@ logger = logging.getLogger("nilo.transcription")
 
 _model = None
 _model_lock = threading.Lock()
+_warmup_done = False
 
 
 class TranscriptionError(RuntimeError):
@@ -95,6 +97,38 @@ def _get_whisper_model():
             compute_type=settings.WHISPER_COMPUTE_TYPE,
         )
         return _model
+
+
+def warmup_whisper_model() -> None:
+    """Download (if needed) and load Whisper weights into memory."""
+    global _warmup_done
+    if _warmup_done:
+        return
+    if not settings.TRANSCRIPTION_ENABLED:
+        _warmup_done = True
+        logger.info("Transcription disabled; skipping Whisper warmup")
+        return
+    if not settings.WHISPER_WARMUP_ON_STARTUP:
+        _warmup_done = True
+        logger.info("WHISPER_WARMUP_ON_STARTUP=false; lazy load on first request")
+        return
+    started = time.perf_counter()
+    _get_whisper_model()
+    _warmup_done = True
+    elapsed = time.perf_counter() - started
+    logger.info(
+        "Whisper model '%s' ready (%.1fs)",
+        settings.WHISPER_MODEL,
+        elapsed,
+    )
+
+
+def is_transcription_ready() -> bool:
+    if not settings.TRANSCRIPTION_ENABLED:
+        return True
+    if not settings.WHISPER_WARMUP_ON_STARTUP:
+        return True
+    return _model is not None
 
 
 def transcribe_audio_bytes(

@@ -9,6 +9,7 @@ from pathlib import Path
 from app.core.config import settings
 from app.db.mongodb import get_client
 from app.schemas.health import ComponentHealth, DiskHealth, HealthReport
+from app.services.speech_transcription import is_transcription_ready
 from app.storage.minio_client import ensure_bucket, get_minio
 
 logger = logging.getLogger(__name__)
@@ -92,9 +93,23 @@ async def check_minio() -> ComponentHealth:
         return ComponentHealth(ok=False, detail=str(exc))
 
 
+def check_transcription() -> ComponentHealth | None:
+    if not settings.TRANSCRIPTION_ENABLED:
+        return ComponentHealth(ok=True, detail="disabled")
+    if not settings.WHISPER_WARMUP_ON_STARTUP:
+        return ComponentHealth(ok=True, detail="lazy load")
+    if is_transcription_ready():
+        return ComponentHealth(
+            ok=True,
+            detail=f"model {settings.WHISPER_MODEL} loaded",
+        )
+    return ComponentHealth(ok=False, detail="warming up or not loaded")
+
+
 async def build_health_report() -> HealthReport:
     mongo = await check_mongodb()
     minio = await check_minio()
+    transcription = check_transcription()
     disk = await asyncio.to_thread(check_disk_paths)
 
     disk_status = "ok"
@@ -105,7 +120,8 @@ async def build_health_report() -> HealthReport:
         if d.level == "warn":
             disk_status = "warn"
 
-    ready = mongo.ok and minio.ok
+    transcribe_ok = transcription is None or transcription.ok
+    ready = mongo.ok and minio.ok and transcribe_ok
 
     if not ready or disk_status == "critical":
         status = "critical"
@@ -121,6 +137,7 @@ async def build_health_report() -> HealthReport:
         ready=ready,
         mongodb=mongo,
         minio=minio,
+        transcription=transcription,
         disk=disk,
         disk_status=disk_status,
     )

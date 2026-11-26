@@ -23,8 +23,11 @@ class HealthReport(BaseModel):
     status: str = Field(description="ok | degraded | critical")
     service: str
     environment: str
-    ready: bool = Field(description="False if Mongo/MinIO unreachable")
+    ready: bool = Field(
+        description="False if Mongo/MinIO unreachable or Whisper warmup pending"
+    )
     mongodb: ComponentHealth
     minio: ComponentHealth
+    transcription: ComponentHealth | None = None
     disk: list[DiskHealth]
     disk_status: str = Field(description="ok | warn | critical (worst path)")
