@@ -1,7 +1,7 @@
 """Text notes on a monitoring session (MongoDB only)."""
 
 from beanie import PydanticObjectId
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.api.deps import get_current_user, require_staff
 from app.models.base import utcnow
@@ -12,6 +12,7 @@ from app.schemas.session_text_note import (
     SessionTextNoteOut,
     SessionTextNoteUpdate,
 )
+from app.services.clinical_delete import delete_text_note_record
 from app.services.monitoring_session import require_session
 
 router = APIRouter()
@@ -98,3 +99,21 @@ async def update_text_note(
     note.updated_at = utcnow()
     await note.save()
     return note
+
+
+@router.delete(
+    "/{session_id}/text-notes/{note_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def delete_text_note(
+    session_id: PydanticObjectId,
+    note_id: PydanticObjectId,
+    _: User = Depends(require_staff),
+) -> Response:
+    await require_session(session_id)
+    note = await SessionTextNote.get(note_id)
+    if note is None or note.session_id != session_id:
+        raise HTTPException(status_code=404, detail="Text note not found")
+    await delete_text_note_record(note)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

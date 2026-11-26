@@ -1,7 +1,7 @@
 """Monitoring session lifecycle and video segments within a session."""
 
 from beanie import PydanticObjectId
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import get_current_user, require_staff
@@ -33,6 +33,7 @@ from app.services.monitoring_session import (
     require_node,
     require_session,
 )
+from app.services.clinical_delete import delete_video_segment_record
 from app.services.media_stream import streaming_response_for_object
 from app.services.presigned_download import mint_presigned_download
 from app.services.session_media_access import build_session_media_access
@@ -293,3 +294,18 @@ async def video_segment_file(
     if segment is None:
         raise HTTPException(status_code=404, detail="Video segment not found")
     return streaming_response_for_object(segment.bucket, segment.object_key)
+
+
+@router.delete(
+    "/video-segments/{segment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def delete_video_segment(
+    segment_id: PydanticObjectId, _: User = Depends(require_staff)
+) -> Response:
+    segment = await VideoSegment.get(segment_id)
+    if segment is None:
+        raise HTTPException(status_code=404, detail="Video segment not found")
+    await delete_video_segment_record(segment)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

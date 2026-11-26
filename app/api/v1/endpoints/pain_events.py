@@ -5,7 +5,7 @@ URL) from which facial landmarks are later extracted for pain assessment.
 """
 
 from beanie import PydanticObjectId
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import get_current_user, require_staff
@@ -17,6 +17,7 @@ from app.models.user import User
 from app.schemas.common import PresignedDownload
 from app.schemas.pain_event import PainEventCreate, PainEventOut
 from app.services.media_stream import streaming_response_for_object
+from app.services.clinical_delete import delete_pain_event_record
 from app.services.monitoring_session import require_active_ingestion
 from app.services.presigned_download import mint_presigned_download
 from app.storage import minio_client
@@ -160,3 +161,18 @@ async def pain_event_video_file(
     if event is None or not event.video_object_key:
         raise HTTPException(status_code=404, detail="Pain event not found")
     return streaming_response_for_object(event.bucket, event.video_object_key)
+
+
+@router.delete(
+    "/{event_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def delete_pain_event(
+    event_id: PydanticObjectId, _: User = Depends(require_staff)
+) -> Response:
+    event = await PainEvent.get(event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Pain event not found")
+    await delete_pain_event_record(event)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

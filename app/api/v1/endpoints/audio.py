@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Annotated
 
 from beanie import PydanticObjectId
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import get_current_user, require_staff
@@ -27,6 +27,7 @@ from app.schemas.audio import (
 from app.schemas.common import PresignedDownload
 from app.services.media_stream import streaming_response_for_object
 from app.services.presigned_download import mint_presigned_download
+from app.services.clinical_delete import delete_audio_record
 from app.services.monitoring_session import require_active_ingestion
 from app.storage import minio_client
 
@@ -236,3 +237,18 @@ async def audio_file(
     if audio is None:
         raise HTTPException(status_code=404, detail="Audio not found")
     return streaming_response_for_object(audio.bucket, audio.object_key)
+
+
+@router.delete(
+    "/{audio_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def delete_audio(
+    audio_id: PydanticObjectId, _: User = Depends(require_staff)
+) -> Response:
+    audio = await AudioRecording.get(audio_id)
+    if audio is None:
+        raise HTTPException(status_code=404, detail="Audio not found")
+    await delete_audio_record(audio)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

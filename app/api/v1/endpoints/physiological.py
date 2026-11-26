@@ -7,12 +7,13 @@ Supports single and bulk insert, plus time-range queries per patient.
 from datetime import datetime
 
 from beanie import PydanticObjectId
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from app.api.deps import get_current_user, require_staff
 from app.models.physiological import PhysiologicalReading
 from app.models.user import User
 from app.schemas.physiological import PhysiologicalCreate, PhysiologicalOut
+from app.services.clinical_delete import delete_physiological_record
 from app.services.monitoring_session import require_active_ingestion
 
 router = APIRouter()
@@ -81,3 +82,18 @@ async def list_readings(
         .limit(limit)
         .to_list()
     )
+
+
+@router.delete(
+    "/{reading_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def delete_reading(
+    reading_id: PydanticObjectId, _: User = Depends(require_staff)
+) -> Response:
+    reading = await PhysiologicalReading.get(reading_id)
+    if reading is None:
+        raise HTTPException(status_code=404, detail="Physiological reading not found")
+    await delete_physiological_record(reading)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

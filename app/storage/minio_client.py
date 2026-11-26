@@ -178,6 +178,23 @@ def put_object_bytes(
     return length
 
 
+def delete_object(object_key: str, bucket: str | None = None) -> None:
+    """Remove object from MinIO; no-op if missing (idempotent clinical delete)."""
+    if not object_key:
+        return
+    bucket = bucket or settings.MINIO_BUCKET
+    if not object_exists(object_key, bucket):
+        logger.warning("MinIO delete skipped (not found): %s", object_key)
+        return
+    try:
+        get_minio().remove_object(bucket, object_key)
+    except Exception as exc:  # noqa: BLE001
+        if object_exists(object_key, bucket):
+            logger.error("MinIO delete failed for %s: %s", object_key, exc)
+            raise
+        logger.warning("MinIO delete raced/missing: %s", object_key)
+
+
 def object_exists(object_key: str, bucket: str | None = None) -> bool:
     bucket = bucket or settings.MINIO_BUCKET
     try:

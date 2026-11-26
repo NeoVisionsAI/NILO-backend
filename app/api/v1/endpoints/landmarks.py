@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Annotated
 
 from beanie import PydanticObjectId
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import get_current_user, require_staff
@@ -22,6 +22,7 @@ from app.schemas.common import PresignedDownload
 from app.services.media_stream import streaming_response_for_object
 from app.services.presigned_download import mint_presigned_download
 from app.schemas.landmarks import LandmarksOut, LandmarksUploadRequest
+from app.services.clinical_delete import delete_landmarks_record
 from app.services.monitoring_session import require_active_ingestion
 from app.storage import minio_client
 
@@ -250,3 +251,18 @@ async def landmarks_file(
             ),
         )
     return streaming_response_for_object(doc.bucket, doc.object_key)
+
+
+@router.delete(
+    "/{landmarks_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def delete_landmarks(
+    landmarks_id: PydanticObjectId, _: User = Depends(require_staff)
+) -> Response:
+    doc = await BodyLandmarks.get(landmarks_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Landmarks not found")
+    await delete_landmarks_record(doc)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
